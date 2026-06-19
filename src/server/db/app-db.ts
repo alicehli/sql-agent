@@ -353,6 +353,29 @@ export async function getSession(sessionId: string): Promise<SessionRecord | nul
 }
 
 /**
+ * Return the user id that owns a given sandbox (via the session it's attached to),
+ * or null if no session currently references that sandbox. Used to authorize the
+ * sandbox HTTP routes. Escapes the value for SQL rather than using
+ * validateIdentifier so unusual-but-valid provider sandbox ids are never rejected.
+ */
+export async function getSandboxOwnerUserId(sandboxId: string): Promise<string | null> {
+  await initAppDb()
+
+  const escaped = sandboxId.replace(/'/g, "''")
+  const sql = `
+    SELECT user_id
+    FROM sessions
+    WHERE sandbox_id = '${escaped}'
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `
+
+  const rows = await runQuery(sql)
+  if (rows.length === 0) return null
+  return (rows[0]!.user_id as string | null) ?? null
+}
+
+/**
  * Update the sandbox ID for a session
  */
 export async function setSessionSandbox(sessionId: string, sandboxId: string): Promise<void> {
