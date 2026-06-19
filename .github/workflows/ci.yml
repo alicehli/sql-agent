@@ -33,3 +33,36 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  deploy:
+    # Deploy to the prod VM only after verify passes, and only on merges to main
+    # (never on PRs). One deploy at a time.
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-prod
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new salman@"$DEPLOY_HOST" \
+            "bash -lc 'set -e; cd ~/app && git pull --ff-only && pnpm install --frozen-lockfile && pnpm run build && pm2 restart sql-agent'"
+
+      - name: Health check
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: |
+          for i in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://$DEPLOY_HOST/" || true)
+            echo "attempt $i: HTTP $code"
+            [ "$code" = "200" ] && echo "deploy healthy" && exit 0
+            sleep 3
+          done
+          echo "health check failed after deploy"; exit 1
