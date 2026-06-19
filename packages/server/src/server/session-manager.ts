@@ -64,11 +64,34 @@ export class SessionManager {
   }
 
   unsubscribe(client: ISessionClient): void {
-    const session = client.sessionId ? this.getSession(client.sessionId) : undefined;
+    // Find the session by id, falling back to membership so a client with an
+    // uninitialized sessionId is still detached (and the session still considered
+    // for eviction).
+    let session = client.sessionId ? this.getSession(client.sessionId) : undefined;
+    if (!session) {
+      session = this.sessionsList.find((existing) => existing.hasClient(client));
+    }
     if (!session) {
       return;
     }
     session.unsubscribe(client);
+    this.evictIfIdle(session);
+  }
+
+  /**
+   * Drop an in-memory session once it has no subscribers and isn't actively
+   * working. Without this, sessionsList grows for the lifetime of the process.
+   * An evicted session is transparently recreated and reloaded from disk
+   * (resumeFrom) the next time a client subscribes to it.
+   */
+  private evictIfIdle(session: Session): void {
+    if (session.clientCount > 0 || session.isBusy || session.isLoading) {
+      return;
+    }
+    const index = this.sessionsList.indexOf(session);
+    if (index !== -1) {
+      this.sessionsList.splice(index, 1);
+    }
   }
 
   sendMessage(

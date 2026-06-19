@@ -293,6 +293,11 @@ export class Session {
     return this.loadingState;
   }
 
+  /** Number of clients currently subscribed to this session. */
+  get clientCount(): number {
+    return this.clients.size;
+  }
+
   private setLoadingState(state: boolean): void {
     if (this.loadingState === state) {
       return;

@@ -61,6 +61,56 @@ describe("SessionManager", () => {
     expect(sendSpy).toHaveBeenCalledWith("hi", attachments);
   });
 
+  it("evicts a session once its last client unsubscribes and it is idle", () => {
+    const manager = new SessionManager();
+    const client = createMockSessionClient(createMockSdkClient());
+    const session = manager.getOrCreateSession(client);
+    session.sessionId = "session-evict";
+    client.sessionId = "session-evict";
+    session.subscribe(client);
+
+    expect(manager.sessions).toContain(session);
+
+    manager.unsubscribe(client);
+
+    expect(manager.sessions).not.toContain(session);
+    // A later subscribe creates a fresh session instance (reloaded from disk).
+    const next = manager.getOrCreateSession(
+      createMockSessionClient(createMockSdkClient()),
+    );
+    expect(next).not.toBe(session);
+  });
+
+  it("keeps a session that still has other subscribers", () => {
+    const manager = new SessionManager();
+    const clientA = createMockSessionClient(createMockSdkClient());
+    const clientB = createMockSessionClient(createMockSdkClient());
+    const session = manager.getOrCreateSession(clientA);
+    session.sessionId = "session-shared";
+    clientA.sessionId = "session-shared";
+    clientB.sessionId = "session-shared";
+    session.subscribe(clientA);
+    session.subscribe(clientB);
+
+    manager.unsubscribe(clientA);
+
+    expect(manager.sessions).toContain(session);
+  });
+
+  it("does not evict a session that is still busy", () => {
+    const manager = new SessionManager();
+    const client = createMockSessionClient(createMockSdkClient());
+    const session = manager.getOrCreateSession(client);
+    session.sessionId = "session-busy";
+    client.sessionId = "session-busy";
+    session.subscribe(client);
+    vi.spyOn(session, "isBusy", "get").mockReturnValue(true);
+
+    manager.unsubscribe(client);
+
+    expect(manager.sessions).toContain(session);
+  });
+
   it("updates SDK options through the active session", () => {
     const manager = new SessionManager();
     const client = createMockSessionClient(createMockSdkClient());
