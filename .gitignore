@@ -140,3 +140,6 @@ vite.config.ts.timestamp-*
 
 # Local documentation (not for submission)
 OPTIMIZATIONS.md
+
+# Scratch / working files
+scratchpad/

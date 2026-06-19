@@ -17,6 +17,7 @@ import {
 import { MessagesPane } from '@/components/chat/messages-pane'
 import { LeftSidebar } from '@/components/left-sidebar/left-sidebar'
 import { SandboxFileBrowser } from '@/components/sandbox/sandbox-file-browser'
+import { ConnectorsList } from '@/components/connectors/connectors-list'
 import type { SessionSelectPayload } from '@/components/left-sidebar/types'
 import {
   ResizableHandle,
@@ -605,12 +606,15 @@ function App() {
               maxSize={50}
               className="min-w-[280px]"
             >
-              <div className="h-full border bg-white">
-                <SandboxFileBrowser
-                  sandboxId={sandboxId}
-                  refreshTrigger={fileRefreshTrigger}
-                  sessionId={sessionId}
-                />
+              <div className="h-full border bg-white flex flex-col">
+                <ConnectorsList />
+                <div className="min-h-0 flex-1 border-t">
+                  <SandboxFileBrowser
+                    sandboxId={sandboxId}
+                    refreshTrigger={fileRefreshTrigger}
+                    sessionId={sessionId}
+                  />
+                </div>
               </div>
             </ResizablePanel>
           </ResizablePanelGroup>

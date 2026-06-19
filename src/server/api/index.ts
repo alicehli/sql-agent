@@ -6,7 +6,7 @@ import { collectProjects, getCurrentProjectId } from './projects'
 import { collectSessionSummaries, readSessionDetails } from './project-sessions'
 import { getWorldlineSiblings, saveBranchMetadata } from './branches'
 import sandboxRouter from './sandbox'
-import { sandboxManager } from '../sandbox/e2b-manager'
+import { sandboxManager } from '../sandbox/sandcastle-manager'
 import {
   saveSnapshot,
   loadSnapshot,

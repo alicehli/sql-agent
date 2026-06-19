@@ -103,20 +103,6 @@ const ThinkingIcon = () => (
   </svg>
 );
 
-const PuzzlePieceIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="0 0 20 20"
-    fill="currentColor"
-    aria-hidden="true"
-    className="h-4 w-4 shrink-0"
-  >
-    <path d="M12 4.467c0-.405.262-.75.559-1.027.276-.257.441-.584.441-.94 0-.828-.895-1.5-2-1.5s-2 .672-2 1.5c0 .362.171.694.456.953.29.265.544.6.544.994a.968.968 0 0 1-1 1H5c-.552 0-1 .448-1 1v2.5a.968.968 0 0 1-1 1c-.395 0-.73-.253-.994-.544C1.747 9.171 1.415 9 1.053 9 .225 9-.447 9.895-.447 11s.672 2 1.5 2c.356 0 .683-.165.94-.441.277-.297.622-.559 1.027-.559a.968.968 0 0 1 .98 1V16c0 .552.448 1 1 1h2.014a.968.968 0 0 1 1-.98c.405 0 .75.262 1.027.559.257.276.584.441.94.441.828 0 1.5-.895 1.5-2s-.672-2-1.5-2c-.362 0-.694.171-.953.456-.265.29-.6.544-.994.544a.968.968 0 0 1-1-1v-2.5a.968.968 0 0 1 1-1h3.014a.968.968 0 0 0 1-.98c0-.405-.262-.75-.559-1.027-.276-.257-.441-.584-.441-.94 0-.828.895-1.5 2-1.5s2 .672 2 1.5c0 .362-.171.694-.456.953-.29.265-.544.6-.544.994a.968.968 0 0 0 1 1H19c.552 0 1-.448 1-1V5c0-.552-.448-1-1-1h-6.014a.968.968 0 0 1-1-.98Z" />
-  </svg>
-);
-
-const DATA_SOURCE_BUTTON_CLASS =
-  "inline-flex items-center gap-1.5 rounded-md border border-primary/50 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary";
 
 const REPORT_MODE_BUTTON_CLASS =
   "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium cursor-pointer active:scale-95";
@@ -228,11 +214,6 @@ export function PromptInputFooter({
       />
 
       <div className={SPACER_CLASS} />
-
-      <div className={DATA_SOURCE_BUTTON_CLASS}>
-        <PuzzlePieceIcon />
-        <span>TPC-H (Sample Data)</span>
-      </div>
 
       <button
         type="button"

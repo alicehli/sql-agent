@@ -4,7 +4,9 @@ import type { ChatMessage } from '@claude-agent-kit/messages'
 import type { ClaudeMessageContext } from '../messages/types'
 
 import { EmptyState } from '../messages/empty-state'
-import { Message, BranchButton } from '../messages/message'
+import { Message } from '../messages/message'
+// BranchButton disabled: worldlines/branching dropped in the Sandcastle migration.
+// import { BranchButton } from '../messages/message'
 import { ThinkingIndicator } from './thinking-indicator'
 import { WorldlineNavigator, type WorldlineBranch } from '../messages/worldline-navigator'
 
@@ -194,9 +196,11 @@ export function MessagesPane({
                         onNavigate={onWorldlineNavigate}
                       />
                     )}
-                    {showBranchButton && onStartEdit && (
+                    {/* Branch button disabled: worldlines/branching dropped in the
+                        Sandcastle migration (sandbox snapshots are no-ops). */}
+                    {/* {showBranchButton && onStartEdit && (
                       <BranchButton messageId={message.id} onStartEdit={onStartEdit} />
-                    )}
+                    )} */}
                   </div>
                 )}
               </div>

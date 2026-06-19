@@ -55,8 +55,9 @@ if [ ! -f ".env" ]; then
     echo ""
     echo "=== Creating .env file ==="
     cat > .env << 'EOF'
-# Required: E2B API key for sandboxes
-E2B_API_KEY=your-e2b-key-here
+# Required: TextQL Sandcastle API for sandboxes
+SANDBOX_BASE_URL=https://app.textql.com
+SANDBOX_API_KEY=your-sandcastle-key-here
 
 # Optional: Override max tokens
 CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
@@ -64,7 +65,7 @@ CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 # Server port (nginx proxies to this)
 PORT=3000
 EOF
-    echo "Created .env - please edit with your E2B API key!"
+    echo "Created .env - please edit with your Sandcastle API key!"
     echo "Run: nano $APP_DIR/.env"
 fi
 

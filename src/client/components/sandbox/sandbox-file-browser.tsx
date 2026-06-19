@@ -30,7 +30,7 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
   // Only use the sandbox assigned to this user's session - don't show other users' sandboxes
   const [selectedSandbox, setSelectedSandbox] = useState<string | null>(propSandboxId ?? null);
   const [files, setFiles] = useState<SandboxFile[]>([]);
-  const [currentPath, setCurrentPath] = useState<string>("/home/user");
+  const [currentPath, setCurrentPath] = useState<string>("/sandbox/files");
   const [previewFile, setPreviewFile] = useState<SandboxFile | null>(null);
   const [previewContent, setPreviewContent] = useState<string>("");
   const [previewEncoding, setPreviewEncoding] = useState<string>("text");
@@ -153,8 +153,8 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
     const parts = currentPath.split("/").filter(Boolean);
     parts.pop();
     const newPath = "/" + parts.join("/") || "/";
-    // Don't go above /home/user by default
-    setCurrentPath(newPath.length < "/home/user".length ? "/home/user" : newPath);
+    // Don't go above /sandbox/files by default
+    setCurrentPath(newPath.length < "/sandbox/files".length ? "/sandbox/files" : newPath);
     setPreviewFile(null);
   }, [currentPath]);
 
@@ -162,7 +162,7 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
   useEffect(() => {
     if (propSandboxId) {
       setSelectedSandbox(propSandboxId);
-      setCurrentPath("/home/user");
+      setCurrentPath("/sandbox/files");
       setPreviewFile(null);
     }
   }, [propSandboxId]);
@@ -299,11 +299,11 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
         </Button>
       </div>
 
-      {/* Breadcrumb / Path - only show paths beyond /home/user */}
-      {selectedSandbox && currentPath !== "/home/user" && (
+      {/* Breadcrumb / Path - only show paths beyond /sandbox/files */}
+      {selectedSandbox && currentPath !== "/sandbox/files" && (
         <div className="flex items-center gap-1 border-b px-4 py-2 text-xs text-muted-foreground">
           {currentPath
-            .replace("/home/user", "")
+            .replace("/sandbox/files", "")
             .split("/")
             .filter(Boolean)
             .map((part, i, arr) => (
@@ -312,7 +312,7 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
                 <button
                   className="hover:text-foreground"
                   onClick={() => {
-                    setCurrentPath("/home/user/" + arr.slice(0, i + 1).join("/"));
+                    setCurrentPath("/sandbox/files/" + arr.slice(0, i + 1).join("/"));
                     setPreviewFile(null);
                   }}
                 >
@@ -335,7 +335,7 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
         <ScrollArea className="flex-1">
           <div className="p-2">
             {/* Go up button */}
-            {currentPath !== "/home/user" && selectedSandbox && (
+            {currentPath !== "/sandbox/files" && selectedSandbox && (
               <button
                 className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
                 onClick={handleGoUp}

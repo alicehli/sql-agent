@@ -55,7 +55,8 @@ pnpm run build
 # Create .env file
 cat > .env << 'EOF'
 ANTHROPIC_API_KEY=your-key-here
-E2B_API_KEY=your-key-here
+SANDBOX_BASE_URL=https://app.textql.com
+SANDBOX_API_KEY=your-key-here
 CLAUDE_CODE_MAX_OUTPUT_TOKENS=128000
 EOF
 
@@ -120,14 +121,15 @@ pm2 restart sql-agent
 | Variable | Description | Required |
 |----------|-------------|----------|
 | `ANTHROPIC_API_KEY` | Anthropic API key | Yes |
-| `E2B_API_KEY` | E2B sandbox API key | Yes |
+| `SANDBOX_API_KEY` | TextQL Sandcastle API key | Yes |
+| `SANDBOX_BASE_URL` | Sandcastle base URL (default `https://app.textql.com`) | No |
 | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | Max tokens for responses | No (default: 128000) |
 | `PORT` | Server port | No (default: 3000 in production) |
 
 ## Costs
 
 - **GCP e2-small VM**: ~$15/month
-- **E2B sandboxes**: Pay-per-use (check e2b.dev pricing)
+- **TextQL Sandcastles**: Pay-per-use (compute hours; see TextQL billing)
 - **Anthropic API**: Pay-per-use
 
 ## Troubleshooting

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { getAuth } from '@clerk/express'
-import { sandboxManager } from '../sandbox/e2b-manager'
+import { sandboxManager } from '../sandbox/sandcastle-manager'
 import { getSandboxOwnerUserId } from '../db/app-db'
 
 const router = Router()
@@ -48,6 +48,18 @@ async function requireSandboxAccess(
   return userId
 }
 
+// List TextQL connectors available to the caller (read-only)
+router.get('/connectors', async (req, res) => {
+  if (!requireUserId(req, res)) return
+
+  try {
+    const connectors = await sandboxManager.listConnectors()
+    res.json(connectors)
+  } catch {
+    res.status(502).json({ error: 'Failed to load connectors' })
+  }
+})
+
 // List the caller's own sandboxes
 router.get('/sandboxes', async (req, res) => {
   const userId = requireUserId(req, res)
@@ -81,7 +93,7 @@ router.post('/sandboxes', async (req, res) => {
 router.get('/sandboxes/:id/files', async (req, res) => {
   const { id } = req.params
   if (!(await requireSandboxAccess(req, res, id))) return
-  const path = (req.query.path as string) || '/home/user'
+  const path = (req.query.path as string) || '/sandbox/files'
 
   try {
     const files = await sandboxManager.listFiles(id, path)

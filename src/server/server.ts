@@ -6,13 +6,12 @@ import type { ViteDevServer } from 'vite'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { clerkMiddleware } from '@clerk/express'
 
-import { SimpleClaudeAgentSDKClient, configureSessionMcpServers } from '@claude-agent-kit/server'
+import { SimpleClaudeAgentSDKClient, configureSessionMcpServers, setOntologyContext } from '@claude-agent-kit/server'
 import { WebSocketHandler } from '@claude-agent-kit/websocket'
 import { registerApiRoutes } from './api'
 import { registerRoutes } from './routes'
-import { sandboxManager } from './sandbox/e2b-manager'
+import { sandboxManager } from './sandbox/sandcastle-manager'
 import { createSandboxMcpServer, setSandboxProvider } from './tools/sandbox-tools'
-import { createSqlMcpServer } from './tools/sql-tools'
 import { createPlaybookMcpServer, setCurrentPlaybookUser } from './tools/playbook-tools'
 import { createBranchMcpServer, getPendingBranchDirection, setPendingBranchDirection } from './tools/branch-tools'
 import { saveBranchMetadata, loadBranchMetadata, getWorldlineSiblings } from './api/branches'
@@ -39,6 +38,26 @@ const wsSandboxSwitchingPromise = new Map<WebSocket, Promise<void>>()
 // this is just the pointer to whose turn is currently being processed.
 let currentWs: WebSocket | null = null
 
+// Ontology/context (ANA.md + .tql index) is org-level and stable, so load it
+// once per process from the first available sandbox and inject into the system prompt.
+let ontologyLoaded = false
+async function maybeLoadOntologyContext(sandboxId: string): Promise<void> {
+  if (ontologyLoaded) return
+  ontologyLoaded = true // optimistic; reset on failure so a later sandbox can retry
+  try {
+    const ctx = await sandboxManager.getOntologyContext(sandboxId)
+    if (ctx) {
+      setOntologyContext(ctx)
+      console.log(`[Server] Injected ontology context (${ctx.length} chars) into system prompt`)
+    } else {
+      ontologyLoaded = false
+    }
+  } catch (err) {
+    console.error('[Server] Failed to load ontology context:', err)
+    ontologyLoaded = false
+  }
+}
+
 export async function createServer(options: CreateServerOptions = {}) {
   const root = options.root ?? process.cwd()
   const isProduction = process.env.NODE_ENV === 'production'
@@ -46,7 +65,6 @@ export async function createServer(options: CreateServerOptions = {}) {
 
   // Create in-process MCP servers for sandbox, SQL, playbook, and worldline tools
   const sandboxMcp = createSandboxMcpServer()
-  const sqlMcp = createSqlMcpServer()
   const playbookMcp = createPlaybookMcpServer()
   const worldlinesMcp = createBranchMcpServer()
 
@@ -54,21 +72,19 @@ export async function createServer(options: CreateServerOptions = {}) {
   configureSessionMcpServers(
     {
       sandbox: sandboxMcp,
-      sql: sqlMcp,
       playbooks: playbookMcp,
       worldlines: worldlinesMcp,
     },
     [
-      // Sandbox tools
+      // Sandbox tools (Python execution + files)
       'mcp__sandbox__run_python',
       'mcp__sandbox__run_command',
       'mcp__sandbox__write_file',
       'mcp__sandbox__read_file',
       'mcp__sandbox__list_files',
-      // SQL tools
-      'mcp__sql__query',
-      'mcp__sql__list_tables',
-      'mcp__sql__describe_table',
+      // TextQL connector tools (SQL + TQL data access)
+      'mcp__sandbox__list_connectors',
+      'mcp__sandbox__query_connector',
       // Playbook tools
       'mcp__playbooks__create_playbook',
       'mcp__playbooks__update_playbook',
@@ -89,6 +105,7 @@ export async function createServer(options: CreateServerOptions = {}) {
     // return it — idempotent, so repeated tool calls don't recreate or re-notify.
     const existing = wsSandboxMap.get(ws)
     if (existing) {
+      void maybeLoadOntologyContext(existing)
       return existing
     }
 
@@ -115,6 +132,9 @@ export async function createServer(options: CreateServerOptions = {}) {
       )
 
       wsSandboxMap.set(ws, sandboxId)
+
+      // Load the ontology/context once and inject it into the system prompt.
+      void maybeLoadOntologyContext(sandboxId)
 
       // Update database with sandbox ID and status (if we have a session)
       if (sessionId) {

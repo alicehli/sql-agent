@@ -162,7 +162,7 @@ export class SandboxListFilesRenderer extends BaseToolRenderer {
   }
 
   header(_context: ClaudeMessageContext, input: ToolInput): ReactNode {
-    const path = (input as { path?: string }).path || "/home/user";
+    const path = (input as { path?: string }).path || "/sandbox/files";
     const dirName = path.split('/').pop() || path;
 
     return (
