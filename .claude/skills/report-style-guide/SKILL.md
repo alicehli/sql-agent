@@ -134,8 +134,8 @@ The template includes `@media print` styles for clean PDF output:
 
 ## Branding
 
-- Company: TextQL
-- Footer: "&copy; 2025 TextQL. All rights reserved."
+- Company: Sidekick
+- Footer: "&copy; 2025 Sidekick. All rights reserved."
 
 ---
 
@@ -149,7 +149,7 @@ Use this complete template as the base for all reports. Copy and customize the s
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Data Report - TextQL</title>
+    <title>Data Report - Sidekick</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -580,7 +580,7 @@ Use this complete template as the base for all reports. Copy and customize the s
 
     <!-- Footer -->
     <footer class="report-footer">
-        <p>&copy; 2025 TextQL. All rights reserved.</p>
+        <p>&copy; 2025 Sidekick. All rights reserved.</p>
     </footer>
 </body>
 </html>
