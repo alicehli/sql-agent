@@ -11,7 +11,7 @@ import { WebSocketHandler } from '@claude-agent-kit/websocket'
 import { registerApiRoutes } from './api'
 import { registerRoutes } from './routes'
 import { sandboxManager } from './sandbox/e2b-manager'
-import { createSandboxMcpServer, setCurrentSandbox, setSandboxProvider } from './tools/sandbox-tools'
+import { createSandboxMcpServer, setSandboxProvider } from './tools/sandbox-tools'
 import { createSqlMcpServer } from './tools/sql-tools'
 import { createPlaybookMcpServer, setCurrentPlaybookUser } from './tools/playbook-tools'
 import { createBranchMcpServer, getPendingBranchDirection, setPendingBranchDirection } from './tools/branch-tools'
@@ -34,9 +34,10 @@ const wsUserMap = new Map<WebSocket, string>()
 // Track sandbox switching state per WebSocket - prevents race conditions
 const wsSandboxSwitchingPromise = new Map<WebSocket, Promise<void>>()
 
-// Track current active connection for sandbox provider
+// The active connection for the sandbox provider. Per-connection session/sandbox
+// state lives in the wsSessionMap / wsSandboxMap maps (the single source of truth);
+// this is just the pointer to whose turn is currently being processed.
 let currentWs: WebSocket | null = null
-let currentSessionId: string | null = null
 
 export async function createServer(options: CreateServerOptions = {}) {
   const root = options.root ?? process.cwd()
@@ -79,22 +80,31 @@ export async function createServer(options: CreateServerOptions = {}) {
   // Set up lazy sandbox provider - creates sandbox only when tools need it
   // Uses getOrCreateSandbox for graceful degradation (resume or create new)
   setSandboxProvider(async () => {
-    if (!currentWs) {
+    const ws = currentWs
+    if (!ws) {
       return null
     }
 
+    // The connection's sandbox (wsSandboxMap) is authoritative. If it already has one,
+    // return it — idempotent, so repeated tool calls don't recreate or re-notify.
+    const existing = wsSandboxMap.get(ws)
+    if (existing) {
+      return existing
+    }
+
     try {
+      const sessionId = wsSessionMap.get(ws) ?? null
       let existingSandboxId: string | undefined
       let snapshotCommitSha: string | undefined
 
       // If we have a session, try to get existing sandbox and snapshot info
-      if (currentSessionId) {
-        const session = await getSession(currentSessionId)
+      if (sessionId) {
+        const session = await getSession(sessionId)
         existingSandboxId = session?.sandboxId || undefined
 
         // Get latest snapshot commit SHA for validation
         const projectId = getCurrentProjectId()
-        const latestSnapshot = await findLatestSnapshotForSession(projectId, currentSessionId)
+        const latestSnapshot = await findLatestSnapshotForSession(projectId, sessionId)
         snapshotCommitSha = latestSnapshot?.commitSha
       }
 
@@ -104,18 +114,18 @@ export async function createServer(options: CreateServerOptions = {}) {
         snapshotCommitSha
       )
 
-      wsSandboxMap.set(currentWs, sandboxId)
+      wsSandboxMap.set(ws, sandboxId)
 
       // Update database with sandbox ID and status (if we have a session)
-      if (currentSessionId) {
-        await setSessionSandboxStatus(currentSessionId, sandboxId, 'running')
+      if (sessionId) {
+        await setSessionSandboxStatus(sessionId, sandboxId, 'running')
       }
 
       // Notify client with status flags
-      currentWs.send(JSON.stringify({
+      ws.send(JSON.stringify({
         type: 'sandbox_changed',
         sandboxId,
-        sessionId: currentSessionId,
+        sessionId,
         isNew,
         wasRestored,
       }))
@@ -327,7 +337,6 @@ export async function createServer(options: CreateServerOptions = {}) {
       )
 
       wsSandboxMap.set(ws, sandboxId)
-      setCurrentSandbox(sandboxId)
 
       // Update database with sandbox status
       await setSessionSandboxStatus(sessionId, sandboxId, 'running')
@@ -396,13 +405,10 @@ export async function createServer(options: CreateServerOptions = {}) {
     // Handle WebSocket with the standard handler
     void webSocketHandler.onOpen(ws)
 
-    // Reset the shared (module-global) context for this connection. Without this a
-    // fresh connection inherits the previous connection's session/sandbox, causing a
-    // brand-new login to resume an old sandbox. State is re-established per message
-    // (resume sets the session; chat creates/reconnects the sandbox).
+    // Point the provider at this connection. Per-connection session/sandbox state is
+    // keyed by ws in the maps, so a fresh connection starts clean automatically (no
+    // stale session/sandbox carried over from a previous connection).
     currentWs = ws
-    currentSessionId = null
-    setCurrentSandbox(null)
 
     // Send connected message WITHOUT sandbox ID (will be sent when session is known)
     const connectMessage = {
@@ -446,7 +452,6 @@ export async function createServer(options: CreateServerOptions = {}) {
 
         // Update session tracking
         wsSessionMap.set(ws, parsed.sessionId)
-        currentSessionId = parsed.sessionId
 
         // Only switch sandbox if session actually changed
         if (previousSession !== parsed.sessionId) {
@@ -471,17 +476,11 @@ export async function createServer(options: CreateServerOptions = {}) {
         }
       }
 
-      // Now point the tool layer at THIS connection's sandbox (after any switch has
-      // completed). Passing null when this connection has no sandbox yet clears any
-      // stale value left by a previous connection, so tools never touch an old sandbox.
-      setCurrentSandbox(wsSandboxMap.get(ws) ?? null)
-
       // Track session for this connection
       if (parsed?.sessionId) {
         const previousSession = wsSessionMap.get(ws)
         if (previousSession !== parsed.sessionId) {
           wsSessionMap.set(ws, parsed.sessionId)
-          currentSessionId = parsed.sessionId
         }
       }
 
@@ -508,7 +507,6 @@ export async function createServer(options: CreateServerOptions = {}) {
           try {
             const newSandboxId = await sandboxManager.createSandbox()
             wsSandboxMap.set(ws, newSandboxId)
-            setCurrentSandbox(newSandboxId)
 
             ws.send(JSON.stringify({
               type: 'sandbox_changed',
@@ -579,13 +577,10 @@ export async function createServer(options: CreateServerOptions = {}) {
       wsUserMap.delete(ws)
       wsSandboxSwitchingPromise.delete(ws)
 
-      // If this was the active connection, clear the shared context so the lazy
-      // provider/tools can't operate on a dead connection or leak its session/sandbox
-      // into the next login.
+      // If this was the active connection, drop the pointer so the provider can't
+      // operate on a dead connection. The per-ws maps were already deleted above.
       if (currentWs === ws) {
         currentWs = null
-        currentSessionId = null
-        setCurrentSandbox(null)
       }
 
       if (closingSandboxId) {

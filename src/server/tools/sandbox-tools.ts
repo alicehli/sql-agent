@@ -7,40 +7,21 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { sandboxManager } from '../sandbox/e2b-manager'
 
-// Global state required because SDK tool handlers lack request context injection.
-// Safe in single-threaded Node.js event loop - see AsyncLocalStorage for alternative.
-let currentSandboxId: string | null = null
-
-// Callback to create sandbox on-demand (set by server)
+// The sandbox is resolved per-connection by the provider (set by the server), which
+// reads the authoritative per-WebSocket maps. SDK tool handlers lack request-context
+// injection, so the provider is the single indirection — there is no separate cached
+// "current sandbox" here to drift out of sync. (For true concurrency across
+// simultaneous connections, the provider's notion of "current connection" would move
+// to AsyncLocalStorage around the SDK query loop.)
 let sandboxProvider: (() => Promise<string | null>) | null = null
-
-export function setCurrentSandbox(sandboxId: string | null) {
-  currentSandboxId = sandboxId
-}
-
-export function getCurrentSandbox(): string | null {
-  return currentSandboxId
-}
 
 export function setSandboxProvider(provider: () => Promise<string | null>) {
   sandboxProvider = provider
 }
 
-// Get or create sandbox - used by tools that need a sandbox
+// Resolve the sandbox for the active connection - used by tools that need a sandbox.
 async function getOrCreateSandbox(): Promise<string | null> {
-  if (currentSandboxId) {
-    return currentSandboxId
-  }
-
-  if (sandboxProvider) {
-    const newId = await sandboxProvider()
-    if (newId) {
-      currentSandboxId = newId
-      return newId
-    }
-  }
-
-  return null
+  return sandboxProvider ? sandboxProvider() : null
 }
 
 /**
