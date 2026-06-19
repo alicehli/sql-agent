@@ -52,9 +52,14 @@ export function registerRoutes(app: Express, options: RegisterRoutesOptions) {
 
       res.status(200).set({ 'Content-Type': 'text/html' }).send(html)
     } catch (error) {
-      options.vite?.ssrFixStacktrace(error as Error)
-      console.error((error as Error).stack)
-      res.status(500).end((error as Error).stack)
+      const err = error as Error
+      options.vite?.ssrFixStacktrace(err)
+      console.error(err.stack)
+      // Log the stack server-side, but never leak it to clients in production.
+      res
+        .status(500)
+        .set({ 'Content-Type': 'text/plain' })
+        .end(options.isProduction ? 'Internal Server Error' : err.stack)
     }
   })
 }
