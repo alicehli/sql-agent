@@ -1,0 +1,4 @@
+# The repository owner reviews and approves all changes.
+# Combined with "Require review from Code Owners" branch protection on main,
+# this means any PR needs @s23h's approval before it can be merged.
+* @s23h
