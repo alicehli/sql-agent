@@ -231,10 +231,10 @@ export function EmptyState(_: EmptyStateProps) {
         <div className="rounded-lg bg-muted/50 p-4 text-left text-xs space-y-2">
           <p><strong>Try asking:</strong></p>
           <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-            <li>"Which suppliers have the highest unfulfilled order backlog? Visualize the top 10"</li>
-            <li>"Compare quarterly revenue trends across all 5 regions with a heatmap"</li>
-            <li>"Find customers whose order frequency dropped last quarter and analyze why"</li>
-            <li>"Build a cohort analysis of customer lifetime value by first order date"</li>
+            <li>"Which connectors can I query? Show me what data is available"</li>
+            <li>"Load data from a connector and visualize the top trends"</li>
+            <li>"Use a saved ontology query (.tql) to pull a governed metric and chart it"</li>
+            <li>"Explore a connector's tables, then build a cohort or trend analysis"</li>
           </ul>
         </div>
       </div>
