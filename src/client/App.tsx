@@ -481,10 +481,7 @@ function App() {
                 className="text-4xl font-semibold text-slate-900 tracking-tight"
                 style={{ fontFamily: "'JetBrains Mono', monospace" }}
               >
-                TextQL{' '}
-                <span className="text-slate-400 font-normal text-lg">
-                  take home
-                </span>
+                Sidekick
               </h1>
               <p
                 className="text-slate-500 text-sm"

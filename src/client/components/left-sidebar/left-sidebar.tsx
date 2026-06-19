@@ -264,7 +264,7 @@ export function LeftSidebar({
       <SidebarHeader
         onNewSession={onNewSession}
         disabled={false}
-        projectName="TextQL"
+        projectName="Sidekick"
         latestActivity={sessions[0]?.lastMessageAt ?? null}
       />
       <div className="flex-1 overflow-hidden">
