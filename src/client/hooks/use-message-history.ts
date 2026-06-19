@@ -6,7 +6,7 @@ export interface MessageHistoryOptions {
   messages: UserMessage[];
   currentInput: string;
   onInputChange: (value: string) => void;
-  editableRef: RefObject<HTMLElement>;
+  editableRef: RefObject<HTMLElement | null>;
 }
 
 export interface MessageHistoryController {

@@ -16,7 +16,6 @@ import {
 import {
   getUserSessions,
   getSession,
-  getSessionBranches,
   getBranchInfo,
   getWorldlineFamily,
   createBranch,
@@ -35,6 +34,38 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+/**
+ * Resolve the authenticated user id, or send a 401 and return null.
+ * Use at the top of any route that exposes or mutates user data.
+ */
+function requireUserId(req: express.Request, res: express.Response): string | null {
+  const { userId } = getAuth(req)
+  if (!userId) {
+    res.status(401).json({ error: 'Authentication required' })
+    return null
+  }
+  return userId
+}
+
+/**
+ * Deny access when the session is tracked in the app DB and owned by a different
+ * user. Returns true if access was denied (and a 403 was sent). Sessions that are
+ * not in the DB (e.g. legacy file-only sessions) are allowed through to avoid
+ * regressing existing access.
+ */
+async function denyIfNotSessionOwner(
+  sessionId: string,
+  userId: string,
+  res: express.Response,
+): Promise<boolean> {
+  const session = await getSession(sessionId)
+  if (session && session.userId !== userId) {
+    res.status(403).json({ error: 'Access denied' })
+    return true
+  }
+  return false
 }
 
 export async function registerApiRoutes(app: Express) {
@@ -398,7 +429,8 @@ export async function registerApiRoutes(app: Express) {
 
   // ============ Legacy Project-based API (for backward compatibility) ============
 
-  app.get('/api/projects', async (_req, res) => {
+  app.get('/api/projects', async (req, res) => {
+    if (!requireUserId(req, res)) return
     try {
       const projects = await collectProjects()
       res.json({ projects })
@@ -410,6 +442,7 @@ export async function registerApiRoutes(app: Express) {
   })
 
   app.get('/api/projects/:projectId', async (req, res) => {
+    if (!requireUserId(req, res)) return
     const { projectId } = req.params
 
     try {
@@ -429,7 +462,10 @@ export async function registerApiRoutes(app: Express) {
   })
 
   app.get('/api/projects/:projectId/sessions/:sessionId', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId, sessionId } = req.params
+    if (await denyIfNotSessionOwner(sessionId, userId, res)) return
 
     try {
       const session = await readSessionDetails(projectId, sessionId)
@@ -451,7 +487,10 @@ export async function registerApiRoutes(app: Express) {
 
   // Get worldline siblings for a session (all branches in the same family)
   app.get('/api/projects/:projectId/sessions/:sessionId/worldlines', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId, sessionId } = req.params
+    if (await denyIfNotSessionOwner(sessionId, userId, res)) return
 
     try {
       const siblings = await getWorldlineSiblings(projectId, sessionId)
@@ -465,6 +504,8 @@ export async function registerApiRoutes(app: Express) {
 
   // Save branch metadata (called after creating a branch)
   app.post('/api/projects/:projectId/branches', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId } = req.params
     const { sessionId, parentSessionId, branchPointMessageUuid } = req.body
 
@@ -472,6 +513,8 @@ export async function registerApiRoutes(app: Express) {
       res.status(400).json({ error: 'Missing required fields' })
       return
     }
+
+    if (await denyIfNotSessionOwner(parentSessionId, userId, res)) return
 
     try {
       await saveBranchMetadata(projectId, {
@@ -491,7 +534,10 @@ export async function registerApiRoutes(app: Express) {
 
   // Create a snapshot of the current sandbox state
   app.post('/api/projects/:projectId/sessions/:sessionId/snapshots', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId, sessionId } = req.params
+    if (await denyIfNotSessionOwner(sessionId, userId, res)) return
     const { messageUuid, sandboxId, description } = req.body
 
     if (!messageUuid || !sandboxId) {
@@ -526,7 +572,10 @@ export async function registerApiRoutes(app: Express) {
 
   // Get all snapshots for a session
   app.get('/api/projects/:projectId/sessions/:sessionId/snapshots', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId, sessionId } = req.params
+    if (await denyIfNotSessionOwner(sessionId, userId, res)) return
 
     try {
       const snapshots = await getSessionSnapshots(projectId, sessionId)
@@ -538,6 +587,8 @@ export async function registerApiRoutes(app: Express) {
 
   // Restore sandbox to a specific snapshot (for worldline switching)
   app.post('/api/projects/:projectId/sessions/:sessionId/snapshots/restore', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId, sessionId } = req.params
     const { sandboxId, targetSessionId } = req.body
 
@@ -545,6 +596,10 @@ export async function registerApiRoutes(app: Express) {
       res.status(400).json({ error: 'Missing required field: sandboxId' })
       return
     }
+
+    // Verify ownership of both the route session and the explicit restore target.
+    if (await denyIfNotSessionOwner(sessionId, userId, res)) return
+    if (targetSessionId && (await denyIfNotSessionOwner(targetSessionId, userId, res))) return
 
     // If targetSessionId is provided, restore to that session's latest snapshot
     // Otherwise, restore to current session's latest snapshot
@@ -608,7 +663,10 @@ export async function registerApiRoutes(app: Express) {
 
   // Get snapshot for a specific message
   app.get('/api/projects/:projectId/sessions/:sessionId/snapshots/:messageUuid', async (req, res) => {
+    const userId = requireUserId(req, res)
+    if (!userId) return
     const { projectId, sessionId, messageUuid } = req.params
+    if (await denyIfNotSessionOwner(sessionId, userId, res)) return
 
     try {
       const snapshot = await loadSnapshot(projectId, sessionId, messageUuid)

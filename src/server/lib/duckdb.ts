@@ -18,9 +18,10 @@ export function getDuckDBPath(): string {
 
   const candidates = [
     path.join(os.homedir(), '.duckdb/cli/latest/duckdb'),
-    '/usr/local/bin/duckdb',
+    '/opt/homebrew/bin/duckdb', // Apple Silicon Homebrew
+    '/usr/local/bin/duckdb', // Intel Homebrew / common Linux
     '/usr/bin/duckdb',
-    'duckdb',
+    'duckdb', // fall back to PATH
   ]
 
   for (const candidate of candidates) {

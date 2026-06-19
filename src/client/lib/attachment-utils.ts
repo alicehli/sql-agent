@@ -33,18 +33,24 @@ export async function readFileAsBase64(file: File): Promise<string> {
 export async function buildAttachmentPayloads(
   attachments: AttachedFile[],
 ): Promise<AttachmentPayload[]> {
-  const payloads: AttachmentPayload[] = []
-  for (const { file } of attachments) {
-    try {
-      const data = await readFileAsBase64(file)
-      payloads.push({
-        name: file.name,
-        mediaType: file.type || 'application/octet-stream',
-        data,
-      })
-    } catch (error) {
-      console.error('Failed to serialize attachment for upload:', error)
-    }
-  }
-  return payloads
+  // Read files concurrently (they're independent) rather than one at a time.
+  // Promise.all preserves order, and failures are isolated per-file so one bad
+  // attachment doesn't drop the others.
+  const results = await Promise.all(
+    attachments.map(async ({ file }): Promise<AttachmentPayload | null> => {
+      try {
+        const data = await readFileAsBase64(file)
+        return {
+          name: file.name,
+          mediaType: file.type || 'application/octet-stream',
+          data,
+        }
+      } catch (error) {
+        console.error('Failed to serialize attachment for upload:', error)
+        return null
+      }
+    }),
+  )
+
+  return results.filter((payload): payload is AttachmentPayload => payload !== null)
 }

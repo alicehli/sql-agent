@@ -36,7 +36,7 @@ const normalizeTodos = (value: unknown): NormalizedTodo[] => {
   }
 
   return value
-    .map((raw, index) => {
+    .map((raw, index): NormalizedTodo | null => {
       if (!raw || typeof raw !== 'object') {
         return null;
       }
@@ -96,10 +96,6 @@ const TodoList = ({ todos }: TodoListProps) => {
       </div>
     );
   }
-
-  const total = todos.length;
-  const completedCount = todos.filter((todo) => todo.status === 'completed').length;
-  const inProgressIndex = todos.findIndex((todo) => todo.status === 'in_progress');
 
   return (
     <div className="flex flex-col gap-3">

@@ -6,14 +6,14 @@
  * Users cannot query this database through the SQL tool.
  */
 
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import { getDuckDBPath } from '../lib/duckdb'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 // App database path - separate from TPC-H data
 const APP_DB_PATH = path.join(os.homedir(), '.claude', 'app.duckdb')
@@ -175,6 +175,7 @@ async function runQuery(sql: string): Promise<Record<string, unknown>[]> {
   if (!duckdbPath) {
     duckdbPath = getDuckDBPath()
   }
+  const dbBin = duckdbPath
 
   // Serialize all queries to prevent concurrent CLI access
   // This prevents DuckDB constraint errors from race conditions
@@ -189,8 +190,13 @@ async function runQuery(sql: string): Promise<Record<string, unknown>[]> {
   try {
     const fullSql = sql.replace(/;?\s*$/, ';')
 
-    const { stdout } = await execAsync(
-      `${duckdbPath} "${APP_DB_PATH}" -json -c "${fullSql.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
+    // Use execFile (no shell) so the SQL — including session titles derived from
+    // user message text — is passed as a single argv element and is never parsed by
+    // a shell. This removes shell command-injection/RCE risk (backticks, $(), quotes)
+    // and makes the previous manual quote/newline escaping unnecessary.
+    const { stdout } = await execFileAsync(
+      dbBin,
+      [APP_DB_PATH, '-json', '-c', fullSql],
       { maxBuffer: 10 * 1024 * 1024 }
     )
 
@@ -510,15 +516,23 @@ export async function getBranchInfo(sessionId: string): Promise<BranchRecord | n
 export async function getWorldlineFamily(sessionId: string): Promise<string[]> {
   await initAppDb()
 
-  // First, find the root session by traversing up
+  // First, find the root session by traversing up.
+  // Guard against cycles (e.g. corrupt data): a self-referential parent chain would
+  // otherwise loop forever while holding the serialized DB lock and hang the server.
   let rootId = sessionId
+  const seenAncestors = new Set<string>([rootId])
   let branchInfo = await getBranchInfo(rootId)
   while (branchInfo) {
-    rootId = branchInfo.parentSessionId
+    const parentId = branchInfo.parentSessionId
+    if (seenAncestors.has(parentId)) break
+    seenAncestors.add(parentId)
+    rootId = parentId
     branchInfo = await getBranchInfo(rootId)
   }
 
-  // Now get all descendants
+  // Now get all descendants, skipping any already-visited session so a cycle can't
+  // cause an infinite loop or an unbounded result.
+  const visited = new Set<string>([rootId])
   const family = [rootId]
   const toProcess = [rootId]
 
@@ -526,6 +540,8 @@ export async function getWorldlineFamily(sessionId: string): Promise<string[]> {
     const current = toProcess.pop()!
     const branches = await getSessionBranches(current)
     for (const branch of branches) {
+      if (visited.has(branch.sessionId)) continue
+      visited.add(branch.sessionId)
       family.push(branch.sessionId)
       toProcess.push(branch.sessionId)
     }

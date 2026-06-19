@@ -1,9 +1,10 @@
-import type {
-  ChatMessage,
-  ChatMessagePart,
-  ChatMessageType,
-  MessageContentBlock,
-  ToolResultContentBlock,
+import {
+  generateId,
+  type ChatMessage,
+  type ChatMessagePart,
+  type ChatMessageType,
+  type MessageContentBlock,
+  type ToolResultContentBlock,
 } from '@claude-agent-kit/messages'
 
 export type SerializedChatMessage = {
@@ -63,8 +64,16 @@ export function updateToolResult(
 }
 
 export function createSystemMessage(text: string): ChatMessage {
-  const part = { content: { type: 'text', text }, toolResult: undefined }
-  return { id: 'system', type: 'user', timestamp: Date.now(), content: [part] }
+  const part: ChatMessagePart = {
+    content: { type: 'text', text },
+    toolResult: undefined,
+  }
+  return {
+    id: `system-${generateId()}`,
+    type: 'user',
+    timestamp: Date.now(),
+    content: [part],
+  }
 }
 
 export function sortMessages(messages: ChatMessage[]): ChatMessage[] {

@@ -3,7 +3,7 @@
  * This enables restoring sandbox state when navigating between worldlines
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { getProjectsRoot } from '../api/projects'
 
@@ -78,7 +78,6 @@ export async function findLatestSnapshotForSession(
   if (!snapshotsDir) return null
 
   try {
-    const { readdir } = await import('node:fs/promises')
     const files = await readdir(snapshotsDir)
 
     const sessionSnapshots: StoredSnapshot[] = []
@@ -122,7 +121,6 @@ export async function loadSnapshotByMessageUuid(
   if (!snapshotsDir) return null
 
   try {
-    const { readdir } = await import('node:fs/promises')
     const files = await readdir(snapshotsDir)
 
     for (const file of files) {
@@ -155,7 +153,6 @@ export async function getSessionSnapshots(
   if (!snapshotsDir) return []
 
   try {
-    const { readdir } = await import('node:fs/promises')
     const files = await readdir(snapshotsDir)
 
     const snapshots: StoredSnapshot[] = []

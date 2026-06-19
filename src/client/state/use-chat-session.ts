@@ -127,7 +127,7 @@ export function useChatSessionOptions(setSDKOptions: SetSDKOptionsFn) {
 
   const setReportMode = useCallback(
     (enabled: boolean, broadcast = true) => {
-      setSessionOptions({ reportMode: enabled } as Partial<SessionSDKOptions>, broadcast)
+      setSessionOptions({ reportMode: enabled }, broadcast)
     },
     [setSessionOptions],
   )

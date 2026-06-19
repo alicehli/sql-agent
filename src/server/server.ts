@@ -4,7 +4,7 @@ import path from 'node:path'
 import express from 'express'
 import type { ViteDevServer } from 'vite'
 import { WebSocketServer, type WebSocket } from 'ws'
-import { clerkMiddleware, getAuth } from '@clerk/express'
+import { clerkMiddleware } from '@clerk/express'
 
 import { SimpleClaudeAgentSDKClient, configureSessionMcpServers } from '@claude-agent-kit/server'
 import { WebSocketHandler } from '@claude-agent-kit/websocket'
@@ -17,8 +17,8 @@ import { createPlaybookMcpServer, setCurrentPlaybookUser } from './tools/playboo
 import { createBranchMcpServer, getPendingBranchDirection, setPendingBranchDirection } from './tools/branch-tools'
 import { saveBranchMetadata, loadBranchMetadata, getWorldlineSiblings } from './api/branches'
 import { getCurrentProjectId } from './api/projects'
-import { saveSnapshot, findLatestSnapshotForSession, loadSnapshotByMessageUuid, getSessionSnapshots } from './sandbox/snapshot-storage'
-import { upsertSession, createBranch, initAppDb, getSession, setSessionSandbox, setSessionSandboxStatus } from './db/app-db'
+import { saveSnapshot, findLatestSnapshotForSession, loadSnapshotByMessageUuid } from './sandbox/snapshot-storage'
+import { upsertSession, createBranch, getSession, setSessionSandbox, setSessionSandboxStatus } from './db/app-db'
 
 // Fallback project ID for unauthenticated requests (shouldn't happen in production)
 const FALLBACK_PROJECT_ID = process.env.PROJECT_ID || 'default'
@@ -396,6 +396,14 @@ export async function createServer(options: CreateServerOptions = {}) {
     // Handle WebSocket with the standard handler
     void webSocketHandler.onOpen(ws)
 
+    // Reset the shared (module-global) context for this connection. Without this a
+    // fresh connection inherits the previous connection's session/sandbox, causing a
+    // brand-new login to resume an old sandbox. State is re-established per message
+    // (resume sets the session; chat creates/reconnects the sandbox).
+    currentWs = ws
+    currentSessionId = null
+    setCurrentSandbox(null)
+
     // Send connected message WITHOUT sandbox ID (will be sent when session is known)
     const connectMessage = {
       type: 'connected',
@@ -463,11 +471,10 @@ export async function createServer(options: CreateServerOptions = {}) {
         }
       }
 
-      // Now set the current sandbox (after any switch has completed)
-      const connSandboxId = wsSandboxMap.get(ws)
-      if (connSandboxId) {
-        setCurrentSandbox(connSandboxId)
-      }
+      // Now point the tool layer at THIS connection's sandbox (after any switch has
+      // completed). Passing null when this connection has no sandbox yet clears any
+      // stale value left by a previous connection, so tools never touch an old sandbox.
+      setCurrentSandbox(wsSandboxMap.get(ws) ?? null)
 
       // Track session for this connection
       if (parsed?.sessionId) {
@@ -571,6 +578,15 @@ export async function createServer(options: CreateServerOptions = {}) {
       wsSessionMap.delete(ws)
       wsUserMap.delete(ws)
       wsSandboxSwitchingPromise.delete(ws)
+
+      // If this was the active connection, clear the shared context so the lazy
+      // provider/tools can't operate on a dead connection or leak its session/sandbox
+      // into the next login.
+      if (currentWs === ws) {
+        currentWs = null
+        currentSessionId = null
+        setCurrentSandbox(null)
+      }
 
       if (closingSandboxId) {
         try {

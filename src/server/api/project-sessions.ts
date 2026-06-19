@@ -49,29 +49,23 @@ export async function collectSessionSummaries(projectId: string): Promise<Sessio
     }
   }
 
-  const summaries: SessionSummary[] = []
-
-  for (const entry of entries) {
+  // Build summaries concurrently: each file is read/parsed independently, and the
+  // final list is sorted afterwards, so processing order doesn't matter.
+  const sessionEntries = entries.filter((entry) => {
     if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.jsonl')) {
-      continue
+      return false
     }
-
-    const sessionId = normalizeSessionId(entry.name)
-
     // Skip branched sessions - they should only be accessible via worldline navigator
-    if (branchedSessionIds.has(sessionId)) {
-      continue
-    }
+    return !branchedSessionIds.has(normalizeSessionId(entry.name))
+  })
 
-    const filePath = path.join(projectDir, entry.name)
-    const summary = await buildSessionSummary(entry.name, filePath)
-    if (!summary) {
-      continue
-    }
+  const built = await Promise.all(
+    sessionEntries.map((entry) =>
+      buildSessionSummary(entry.name, path.join(projectDir, entry.name)),
+    ),
+  )
 
-    summaries.push(summary)
-  }
-
+  const summaries = built.filter((s): s is SessionSummary => s !== null)
   summaries.sort((a, b) => b.lastMessageAt - a.lastMessageAt)
   return summaries
 }

@@ -337,7 +337,7 @@ export class Session {
     };
 
     // Build system prompt with optional report mode instructions
-    const reportMode = (this.options as Record<string, unknown>).reportMode === true;
+    const reportMode = this.options.reportMode === true;
     const systemPromptAppend = reportMode
       ? DEFAULT_SYSTEM_PROMPT + REPORT_MODE_INSTRUCTIONS
       : DEFAULT_SYSTEM_PROMPT;

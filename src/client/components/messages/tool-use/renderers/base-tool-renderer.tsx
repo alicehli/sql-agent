@@ -1,14 +1,7 @@
 "use client";
 
 import { CodeBlock } from "@/components/messages/code-block";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import {
-  CheckCircleIcon,
-  CircleIcon,
-  ClockIcon,
-  XCircleIcon,
-} from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
 
@@ -19,7 +12,7 @@ import {
   stringifyInput,
   toDisplayText,
 } from "./utils";
-import type { ToolInput } from "./utils";
+import type { ToolInput as ToolInputData } from "./utils";
 
 export type ToolState =
   | "input-streaming"
@@ -163,13 +156,13 @@ export const ToolOutput = ({
 export abstract class BaseToolRenderer {
   constructor(protected readonly name: string) {}
 
-  header(_context: ClaudeMessageContext, _input: ToolInput): ReactNode {
+  header(_context: ClaudeMessageContext, _input: ToolInputData): ReactNode {
     return <span className="font-semibold">{this.name}</span>;
   }
 
   body(
     context: ClaudeMessageContext,
-    input: ToolInput,
+    input: ToolInputData,
     result: ToolResultContentBlock | undefined,
   ): ReactNode {
     const sections: ReactNode[] = [];
@@ -226,7 +219,7 @@ export abstract class BaseToolRenderer {
 
   protected renderInput(
     context: ClaudeMessageContext,
-    input: ToolInput,
+    input: ToolInputData,
   ): ReactNode | undefined {
     if (!isNonEmptyRecord(input)) {
       return undefined;
@@ -297,7 +290,7 @@ export abstract class BaseToolRenderer {
   }
 
   protected toolDescription(
-    _input: ToolInput,
+    _input: ToolInputData,
     _result: ToolResultContentBlock | undefined,
   ): ReactNode | undefined {
     return undefined;

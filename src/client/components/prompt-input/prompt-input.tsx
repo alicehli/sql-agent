@@ -340,12 +340,6 @@ export const PromptInput = forwardRef<PromptInputHandle, PromptInputProps>(
       setModelPickerOpen(false);
     };
 
-    const handleToggleCommandMenu = () => {
-      setSuppressCommandFilter(false);
-      setCommandMenuOpen((value) => !value);
-      setModelPickerOpen(false);
-    };
-
     const handleSubmit = (event?: FormEvent) => {
       event?.preventDefault();
       const text = editableRef.current?.textContent?.trim() ?? "";
@@ -382,9 +376,7 @@ export const PromptInput = forwardRef<PromptInputHandle, PromptInputProps>(
       if (event.key === "Escape") {
         if (atMention || slashCommand || isCommandMenuOpen || isModelPickerOpen) {
           event.preventDefault();
-          setCommandMenuOpen(false);
-          setSuppressCommandFilter(false);
-          setModelPickerOpen(false);
+          closeOverlays();
         }
         return;
       }

@@ -15,7 +15,7 @@ export function useMentionAndSlash(
   currentInput: string,
   editable: HTMLElement | null,
 ): MentionSlashMatches {
-  const [, forceRerender] = useState(0);
+  const [selectionTick, forceRerender] = useState(0);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -62,7 +62,9 @@ export function useMentionAndSlash(
         "/",
       ),
     };
-  }, [currentInput, editable]);
+    // selectionTick is included so the cursor-dependent match recomputes when the
+    // caret moves (via the selectionchange listener), not only when the text changes.
+  }, [currentInput, editable, selectionTick]);
 
   useEffect(() => {
     if (dismissed && !matches.atMention && !matches.slashCommand) {

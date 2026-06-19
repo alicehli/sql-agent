@@ -189,13 +189,20 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
   // Refresh files when triggered by parent (e.g., after assistant turn completes)
   // Also auto-preview new previewable files (HTML, images)
   useEffect(() => {
-    if (selectedSandbox && refreshTrigger > 0) {
-      (async () => {
+    if (!selectedSandbox || refreshTrigger <= 0) return;
+
+    // Guard against out-of-order responses: if the sandbox/path changes (or the
+    // component unmounts) while this fetch is in flight, a late response must not
+    // overwrite the current file list with stale data.
+    let cancelled = false;
+
+    (async () => {
+      try {
         const response = await fetch(
           `/api/sandboxes/${selectedSandbox}/files?path=${encodeURIComponent(currentPath)}`
         );
         const newFiles: SandboxFile[] = await response.json();
-        if (!Array.isArray(newFiles)) return;
+        if (cancelled || !Array.isArray(newFiles)) return;
 
         // Find new previewable files (not in previous list)
         const newPreviewableFiles = newFiles.filter(
@@ -215,8 +222,14 @@ export function SandboxFileBrowser({ sandboxId: propSandboxId, refreshTrigger = 
         if (newPreviewableFiles.length > 0) {
           handlePreview(newPreviewableFiles[0]);
         }
-      })();
-    }
+      } catch {
+        // File listing is best-effort; ignore transient fetch errors.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [refreshTrigger, selectedSandbox, currentPath, handlePreview]);
 
   const formatSize = (bytes?: number) => {

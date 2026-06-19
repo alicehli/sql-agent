@@ -78,7 +78,7 @@ function App() {
   const { isBusy, isLoading, options } = sessionInfo
   const permissionMode = options.permissionMode ?? 'default'
   const thinkingLevel = options.thinkingLevel ?? 'off'
-  const reportMode = (options as Record<string, unknown>).reportMode === true
+  const reportMode = options.reportMode === true
   const selectChatSession = useSelectChatSession()
   const handleOutcomingMessage = useOutcomingMessageHandler()
 
@@ -247,10 +247,11 @@ function App() {
 
         // Clear messages to branch point (same as UI flow in use-inline-editing.ts)
         setMessages((prev) => {
-          const branchIndex = prev.findIndex(
-            (m) => m.uuid === branchAtMessageUuid || m.id === branchAtMessageUuid
-          )
-          return branchIndex > 0 ? prev.slice(0, branchIndex) : []
+          const branchIndex = prev.findIndex((m) => m.id === branchAtMessageUuid)
+          // Not found: leave the conversation untouched rather than wiping it.
+          if (branchIndex === -1) return prev
+          // Keep messages before the branch point (empty when branching from the first).
+          return prev.slice(0, branchIndex)
         })
 
         // Small delay to let original session fully release MCP server resources

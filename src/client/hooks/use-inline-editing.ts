@@ -79,10 +79,12 @@ export function useInlineEditing({
       // The message being branched from is being replaced, so hide it
       setMessages((prev) => {
         const branchIndex = prev.findIndex((m) => m.id === messageId)
-        if (branchIndex > 0) {
-          return prev.slice(0, branchIndex) // Keep messages before branch point
+        // Not found: leave the conversation untouched rather than wiping it.
+        if (branchIndex === -1) {
+          return prev
         }
-        return [] // If branching from first message, clear all
+        // Keep messages before the branch point (empty when branching from the first).
+        return prev.slice(0, branchIndex)
       })
 
       // Send branch request

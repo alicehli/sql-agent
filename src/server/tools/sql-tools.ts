@@ -7,14 +7,14 @@
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
-import { execSync, exec } from 'child_process'
+import { execSync, execFile } from 'child_process'
 import { promisify } from 'util'
 import path from 'path'
 import os from 'os'
 import fs from 'fs'
 import { getDuckDBPath } from '../lib/duckdb'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 const MAX_ROWS = 100
 const MAX_CHARS = 50000
@@ -75,8 +75,12 @@ async function runQuery(sql: string): Promise<{ rows: Record<string, unknown>[];
   const fullSql = `${sql.replace(/;?\s*$/, '')};`
 
   try {
-    const { stdout } = await execAsync(
-      `${duckdbPath} "${DB_PATH}" -json -c "${fullSql.replace(/"/g, '\\"')}"`,
+    // Use execFile (no shell): the SQL is passed as a single argv element, so
+    // generated SQL containing shell metacharacters ($(), backticks, quotes) cannot
+    // be interpreted by a shell. Avoids command injection from LLM/prompt-injected SQL.
+    const { stdout } = await execFileAsync(
+      duckdbPath,
+      [DB_PATH, '-json', '-c', fullSql],
       { maxBuffer: 10 * 1024 * 1024 } // 10MB buffer
     )
 

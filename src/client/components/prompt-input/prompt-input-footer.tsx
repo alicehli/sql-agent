@@ -153,7 +153,6 @@ function getSelectionLabel(selection: SelectionInfo): string {
 
 export interface PromptInputFooterProps {
   mode: PermissionMode;
-  onCycleMode: () => void;
   currentSelection: SelectionInfo | null;
   canSendMessage: boolean;
   includeSelection: boolean;

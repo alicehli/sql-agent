@@ -56,7 +56,6 @@ export class E2BSandboxManager {
    */
   async createSandbox(): Promise<string> {
     // Use betaCreate with autoPause for persistence
-    // @ts-expect-error - betaCreate is beta API not in types yet
     const sandbox = await Sandbox.betaCreate({
       autoPause: true,
       timeoutMs: 10 * 60 * 1000, // 10 minutes idle timeout
