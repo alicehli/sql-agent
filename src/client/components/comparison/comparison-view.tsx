@@ -290,9 +290,9 @@ export function ComparisonView() {
           {roundNum > 0 && (
             <button
               onClick={() => setChartFull(true)}
-              className="rounded bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+              className="rounded-md bg-slate-900 px-3.5 py-1 text-xs font-medium text-white hover:bg-slate-800"
             >
-              📈 Analysis
+              Insights
             </button>
           )}
           <button onClick={reset} className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50">
@@ -313,11 +313,13 @@ export function ComparisonView() {
           const last = turns[turns.length - 1]
           return (
             <div key={lane.id} className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-              <div className="h-1 w-full" style={{ backgroundColor: lane.color }} />
               <div className="flex items-center justify-between border-b px-3 py-2">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
-                  <div className="text-[11px] text-slate-500">{lane.sub}</div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: lane.color }} />
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
+                    <div className="text-[11px] text-slate-500">{lane.sub}</div>
+                  </div>
                 </div>
                 {running[lane.id] && (
                   <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600">
