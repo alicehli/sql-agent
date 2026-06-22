@@ -89,7 +89,7 @@ function App() {
   // Comparison demo route (/compare) — set after mount to avoid SSR mismatch
   const [route, setRoute] = useState<'chat' | 'compare'>('chat')
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.pathname === '/compare') {
+    if (typeof window !== 'undefined' && ['/compare', '/versus'].includes(window.location.pathname)) {
       setRoute('compare')
     }
   }, [])
