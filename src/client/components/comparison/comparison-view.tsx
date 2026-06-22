@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 type LaneId = 'modal' | 'sandcastle' | 'mcp' | 'ana'
 
@@ -294,16 +294,18 @@ export function ComparisonView() {
           const turns = lanes[lane.id]
           const last = turns[turns.length - 1]
           return (
-            <div key={lane.id} className="flex min-h-0 flex-col rounded border border-slate-200 bg-white">
+            <div key={lane.id} className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+              <div className="h-1 w-full" style={{ backgroundColor: lane.color }} />
               <div className="flex items-center justify-between border-b px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: lane.color }} />
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
-                    <div className="text-[11px] text-slate-500">{lane.sub}</div>
-                  </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
+                  <div className="text-[11px] text-slate-500">{lane.sub}</div>
                 </div>
-                {running[lane.id] && <span className="text-[11px] text-emerald-600">● live</span>}
+                {running[lane.id] && (
+                  <span className="flex items-center gap-1 text-[11px] font-medium text-emerald-600">
+                    <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> live
+                  </span>
+                )}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
@@ -418,87 +420,130 @@ function FlywheelChart({
   metric: 'tools' | 'time'
   onMetric: (m: 'tools' | 'time') => void
 }) {
-  const W = 1000
-  const H = 150
-  const padL = 38
-  const padR = 10
-  const padT = 12
-  const padB = 22
-  const plotW = W - padL - padR
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [W, setW] = useState(900)
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const cw = entries[0]?.contentRect.width
+      if (cw && cw > 100) setW(Math.round(cw))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const H = 168
+  const padL = 44
+  const padR = 56
+  const padT = 14
+  const padB = 26
+  const plotW = Math.max(40, W - padL - padR)
   const plotH = H - padT - padB
   const n = rounds.length
-  const valOf = (m?: LaneMetrics) => (m ? (metric === 'tools' ? m.toolCalls : m.elapsedMs / 1000) : null)
+  const valOf = (m?: LaneMetrics) => (m ? (metric === 'tools' ? m.toolCalls : Math.round(m.elapsedMs / 100) / 10) : null)
   let yMax = 1
   for (const r of rounds) for (const l of LANES) {
     const v = valOf(r[l.id])
     if (v != null && v > yMax) yMax = v
   }
-  yMax = Math.ceil(yMax * 1.1)
+  yMax = niceMax(yMax)
   const xFor = (i: number) => padL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW)
   const yFor = (v: number) => padT + plotH - (v / yMax) * plotH
+  const fmtY = (v: number) => (metric === 'time' ? `${v}` : `${Math.round(v)}`)
 
   return (
-    <div className="border-b bg-slate-50 px-6 py-2">
-      <div className="mb-1 flex items-center justify-between">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          improvement over rounds · {metric === 'tools' ? 'tool calls' : 'agent seconds'} (lower = better)
+    <div className="border-b bg-gradient-to-b from-slate-50 to-white px-6 pb-3 pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xs font-semibold tracking-tight text-slate-800">Improvement over rounds</span>
+          <span className="text-[11px] text-slate-400">{metric === 'tools' ? 'tool calls' : 'agent seconds'} per round · lower is better</span>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 rounded-md bg-slate-100 p-0.5">
           {(['tools', 'time'] as const).map((m) => (
             <button
               key={m}
               onClick={() => onMetric(m)}
-              className={`rounded px-2 py-0.5 text-[10px] ${metric === m ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
+              className={`rounded px-2.5 py-1 text-[10px] font-medium transition ${
+                metric === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
             >
               {m === 'tools' ? 'tool calls' : 'time'}
             </button>
           ))}
         </div>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="h-[150px] w-full" preserveAspectRatio="none">
-        {/* y gridlines */}
-        {[0, 0.5, 1].map((f) => (
-          <g key={f}>
-            <line x1={padL} y1={padT + plotH * f} x2={W - padR} y2={padT + plotH * f} stroke="#e2e8f0" strokeWidth={1} />
-            <text x={padL - 5} y={padT + plotH * f + 3} textAnchor="end" fontSize={9} fill="#94a3b8">
-              {Math.round(yMax * (1 - f))}
-            </text>
-          </g>
-        ))}
-        {/* x labels */}
-        {rounds.map((_, i) => (
-          <text key={i} x={xFor(i)} y={H - 6} textAnchor="middle" fontSize={9} fill="#94a3b8">
-            {i + 1}
-          </text>
-        ))}
-        {/* lane lines */}
-        {LANES.map((lane) => {
-          const pts: Array<[number, number]> = []
-          rounds.forEach((r, i) => {
-            const v = valOf(r[lane.id])
-            if (v != null) pts.push([xFor(i), yFor(v)])
-          })
-          if (pts.length === 0) return null
-          const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
-          return (
-            <g key={lane.id}>
-              <path d={d} fill="none" stroke={lane.color} strokeWidth={2} />
-              {pts.map((p, i) => (
-                <circle key={i} cx={p[0]} cy={p[1]} r={2.5} fill={lane.color} />
-              ))}
+      <div ref={wrapRef} className="w-full">
+        <svg width={W} height={H} className="block">
+          <defs>
+            <linearGradient id="bFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity={0.16} />
+              <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          {/* y gridlines */}
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <g key={f}>
+              <line x1={padL} y1={padT + plotH * f} x2={W - padR} y2={padT + plotH * f} stroke="#eef2f6" strokeWidth={1} />
+              <text x={padL - 8} y={padT + plotH * f + 3} textAnchor="end" fontSize={10} fill="#94a3b8">
+                {fmtY(yMax * (1 - f))}
+              </text>
             </g>
-          )
-        })}
-      </svg>
-      <div className="mt-1 flex flex-wrap gap-3">
+          ))}
+          {/* x labels */}
+          {rounds.map((_, i) => (
+            <text key={i} x={xFor(i)} y={H - 8} textAnchor="middle" fontSize={10} fill="#94a3b8">
+              R{i + 1}
+            </text>
+          ))}
+          {/* lane lines (draw B last so it sits on top) */}
+          {[...LANES].sort((a, b) => (a.id === 'sandcastle' ? 1 : 0) - (b.id === 'sandcastle' ? 1 : 0)).map((lane) => {
+            const isHero = lane.id === 'sandcastle'
+            const pts: Array<[number, number, number]> = []
+            rounds.forEach((r, i) => {
+              const v = valOf(r[lane.id])
+              if (v != null) pts.push([xFor(i), yFor(v), v])
+            })
+            if (pts.length === 0) return null
+            const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+            const last = pts[pts.length - 1]
+            return (
+              <g key={lane.id}>
+                {isHero && pts.length > 1 && (
+                  <path
+                    d={`${d} L${last[0].toFixed(1)},${(padT + plotH).toFixed(1)} L${pts[0][0].toFixed(1)},${(padT + plotH).toFixed(1)} Z`}
+                    fill="url(#bFill)"
+                  />
+                )}
+                <path d={d} fill="none" stroke={lane.color} strokeWidth={isHero ? 3 : 1.75} strokeLinejoin="round" strokeLinecap="round" opacity={isHero ? 1 : 0.85} />
+                {pts.map((p, i) => (
+                  <circle key={i} cx={p[0]} cy={p[1]} r={isHero ? 4 : 3} fill="#fff" stroke={lane.color} strokeWidth={isHero ? 3 : 2} />
+                ))}
+                <text x={last[0] + 8} y={last[1] + 3.5} fontSize={11} fontWeight={isHero ? 700 : 500} fill={lane.color}>
+                  {fmtY(last[2])}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
         {LANES.map((l) => (
-          <span key={l.id} className="flex items-center gap-1 text-[10px] text-slate-500">
-            <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: l.color }} /> {l.title}
+          <span key={l.id} className="flex items-center gap-1.5 text-[10px] text-slate-500">
+            <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: l.color }} /> {l.title}
           </span>
         ))}
       </div>
     </div>
   )
+}
+
+function niceMax(v: number): number {
+  if (v <= 1) return 1
+  const pow = Math.pow(10, Math.floor(Math.log10(v)))
+  const n = v / pow
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+  return step * pow
 }
 
 function OntologyReview({
@@ -581,7 +626,13 @@ function TurnBlock({ turn: t }: { turn: Turn }) {
         )
       )}
 
-      {t.error && <pre className="mt-1 whitespace-pre-wrap text-xs text-red-600">{t.error}</pre>}
+      {t.error && (
+        <div className="mt-1 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+          {/load failed|networkerror|fetch|terminated/i.test(t.error)
+            ? '⚠ connection dropped mid-stream — re-run this round'
+            : `⚠ ${t.error}`}
+        </div>
+      )}
 
       {images.map((a, i) => (
         <figure key={`img-${i}`} className="mt-2">

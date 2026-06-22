@@ -147,9 +147,24 @@ router.post('/compare/:lane', async (req: Request, res: Response) => {
     ;(res as Response & { flush?: () => void }).flush?.()
   }
 
+  // Heartbeat: all 4 lane streams multiplex over one HTTP/2 connection, so a
+  // single long silent step (Modal cold-start, a big run_python, an Ana poll
+  // gap) lets Cloudflare idle-timeout the whole connection and every lane dies
+  // with "Load failed". A periodic ping keeps it alive; the client ignores it.
+  const heartbeat = setInterval(() => {
+    try {
+      res.write('{"type":"ping"}\n')
+      ;(res as Response & { flush?: () => void }).flush?.()
+    } catch {
+      // connection already gone
+    }
+  }, 15000)
+  heartbeat.unref?.()
+
   let aborted = false
   req.on('close', () => {
     aborted = true
+    clearInterval(heartbeat)
   })
 
   const session = getCompareSession(sessionId)
@@ -177,6 +192,7 @@ router.post('/compare/:lane', async (req: Request, res: Response) => {
   } catch (e) {
     if (!aborted) emit({ type: 'error', message: e instanceof Error ? e.message : String(e) })
   } finally {
+    clearInterval(heartbeat)
     res.end()
   }
 })
