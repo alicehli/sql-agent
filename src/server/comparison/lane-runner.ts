@@ -227,7 +227,7 @@ export async function runSandboxLane(opts: {
         allowedTools,
         model: MODEL,
         systemPrompt,
-        maxTurns: 25,
+        maxTurns: 100,
         permissionMode: 'bypassPermissions',
         ...(sess.resumeId ? { resume: sess.resumeId } : {}),
       } as Parameters<typeof query>[0]['options'],
