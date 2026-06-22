@@ -72,6 +72,23 @@ export interface QueryResult {
   preview: string
 }
 
+export interface LibraryDiff {
+  hasChanges: boolean
+  diffs: Array<{ name: string; additions?: number; deletions?: number; is_new?: boolean; is_delete?: boolean; is_rename?: boolean }>
+  rawDiff: string
+}
+
+export interface LibraryPatch {
+  patchId: string
+  patchNumber: number
+  status: string
+  gitRef: string
+  hasConflicts: boolean
+  conflicts?: string
+  autoApproved: boolean
+  rawDiff: string
+}
+
 interface ExecuteApiResponse {
   output: string[] | null
   error?: string
@@ -261,6 +278,54 @@ export class SandcastleManager {
       numRows: res.num_rows,
       numCols: res.num_cols,
       preview: res.preview,
+    }
+  }
+
+  /**
+   * Dry-run: preview pending edits in ./library (the ontology) without writing.
+   * GET /v2/sandcastles/:id/library/diff
+   */
+  async diffLibrary(sandboxId: string): Promise<LibraryDiff> {
+    const r = await this.request<{ has_changes: boolean; diffs?: LibraryDiff['diffs']; raw_diff?: string }>(
+      'GET',
+      `/v2/sandcastles/${sandboxId}/library/diff`
+    )
+    return { hasChanges: !!r.has_changes, diffs: r.diffs || [], rawDiff: r.raw_diff || '' }
+  }
+
+  /**
+   * Persist the sandbox's ./library edits back to the org Context Library as a
+   * reviewable patch (the ontology write / self-learning flywheel).
+   * POST /v2/sandcastles/:id/library/patches
+   */
+  async createLibraryPatch(
+    sandboxId: string,
+    opts: { title: string; description: string; draft?: boolean; patchNumber?: number }
+  ): Promise<LibraryPatch> {
+    const body: Record<string, unknown> = { title: opts.title, description: opts.description }
+    if (opts.draft !== undefined) body.draft = opts.draft
+    if (opts.patchNumber !== undefined) body.patch_number = opts.patchNumber
+
+    const r = await this.request<{
+      patch_id: string
+      patch_number: number
+      status: string
+      git_ref: string
+      has_conflicts: boolean
+      conflicts?: string
+      auto_approved: boolean
+      raw_diff?: string
+    }>('POST', `/v2/sandcastles/${sandboxId}/library/patches`, body)
+
+    return {
+      patchId: r.patch_id,
+      patchNumber: r.patch_number,
+      status: r.status,
+      gitRef: r.git_ref,
+      hasConflicts: !!r.has_conflicts,
+      conflicts: r.conflicts,
+      autoApproved: !!r.auto_approved,
+      rawDiff: r.raw_diff || '',
     }
   }
 

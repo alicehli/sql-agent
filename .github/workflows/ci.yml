@@ -53,7 +53,7 @@ jobs:
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new salman@"$DEPLOY_HOST" \
-            "bash -lc 'set -e; cd ~/app && git pull --ff-only && pnpm install --frozen-lockfile && pnpm run build && pm2 restart sql-agent'"
+            "bash -lc 'set -e; cd ~/app && git pull --ff-only && pnpm install --frozen-lockfile && pnpm run build; { (test -d .modal-venv || python3 -m venv .modal-venv) && ./.modal-venv/bin/pip install -q --upgrade modal; } || echo \"WARN: modal venv provisioning failed (comparison lane A only)\"; pm2 restart sql-agent'"
 
       - name: Health check
         env:

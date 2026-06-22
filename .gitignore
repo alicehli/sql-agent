@@ -143,3 +143,6 @@ OPTIMIZATIONS.md
 
 # Scratch / working files
 scratchpad/
+
+# Modal venv (comparison demo, local only)
+.modal-venv/

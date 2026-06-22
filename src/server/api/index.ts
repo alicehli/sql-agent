@@ -6,6 +6,7 @@ import { collectProjects, getCurrentProjectId } from './projects'
 import { collectSessionSummaries, readSessionDetails } from './project-sessions'
 import { getWorldlineSiblings, saveBranchMetadata } from './branches'
 import sandboxRouter from './sandbox'
+import compareRouter from './compare'
 import { sandboxManager } from '../sandbox/sandcastle-manager'
 import {
   saveSnapshot,
@@ -88,6 +89,9 @@ export async function registerApiRoutes(app: Express) {
 
   // Sandbox API routes
   app.use('/api', sandboxRouter)
+
+  // Comparison demo routes (Modal vs Sandcastle vs Ana)
+  app.use('/api', compareRouter)
 
   // Get current project config (for frontend to know the project ID)
   // projectId is cwd-based for SDK compatibility; userId is from Clerk auth
