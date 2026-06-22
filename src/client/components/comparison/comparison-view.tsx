@@ -74,6 +74,7 @@ export function ComparisonView() {
   const [drafts, setDrafts] = useState<Record<LaneId, string>>({ modal: '', sandcastle: '', mcp: '', ana: '' })
   const [rounds, setRounds] = useState<RoundMetrics[]>([])
   const [chartMetric, setChartMetric] = useState<'tools' | 'time'>('tools')
+  const [chartFull, setChartFull] = useState(false)
   // Ontology review between rounds (lane B's ./library edits).
   const [ontoFiles, setOntoFiles] = useState<OntoFile[] | null>(null)
   const [ontoLoading, setOntoLoading] = useState(false)
@@ -85,6 +86,13 @@ export function ComparisonView() {
 
   const anyRunning = running.modal || running.sandcastle || running.mcp || running.ana
   const roundNum = rounds.length
+
+  useEffect(() => {
+    if (!chartFull) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setChartFull(false)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [chartFull])
 
   function patchLast(id: LaneId, fn: (t: Turn) => Turn) {
     setLanes((prev) => {
@@ -285,8 +293,14 @@ export function ComparisonView() {
         </div>
       </div>
 
-      {rounds.length > 0 && (
-        <FlywheelChart rounds={rounds} metric={chartMetric} onMetric={setChartMetric} />
+      {rounds.length > 0 && !chartFull && (
+        <FlywheelChart rounds={rounds} metric={chartMetric} onMetric={setChartMetric} expanded={false} onToggleExpand={() => setChartFull(true)} />
+      )}
+
+      {chartFull && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+          <FlywheelChart rounds={rounds} metric={chartMetric} onMetric={setChartMetric} expanded onToggleExpand={() => setChartFull(false)} />
+        </div>
       )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden p-2 md:grid-cols-2 xl:grid-cols-4">
@@ -415,31 +429,37 @@ function FlywheelChart({
   rounds,
   metric,
   onMetric,
+  expanded,
+  onToggleExpand,
 }: {
   rounds: RoundMetrics[]
   metric: 'tools' | 'time'
   onMetric: (m: 'tools' | 'time') => void
+  expanded: boolean
+  onToggleExpand: () => void
 }) {
   const wrapRef = useRef<HTMLDivElement>(null)
-  const [W, setW] = useState(900)
+  const [dims, setDims] = useState({ w: 900, h: expanded ? 600 : 168 })
   useEffect(() => {
     const el = wrapRef.current
     if (!el) return
     const ro = new ResizeObserver((entries) => {
-      const cw = entries[0]?.contentRect.width
-      if (cw && cw > 100) setW(Math.round(cw))
+      const r = entries[0]?.contentRect
+      if (r) setDims({ w: Math.max(160, Math.round(r.width)), h: Math.max(120, Math.round(r.height)) })
     })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
 
-  const H = 168
-  const padL = 44
-  const padR = 56
-  const padT = 14
-  const padB = 26
+  const W = dims.w
+  const H = dims.h
+  const fz = expanded ? 1.5 : 1 // font / stroke scale
+  const padL = expanded ? 60 : 44
+  const padR = expanded ? 88 : 56
+  const padT = expanded ? 24 : 14
+  const padB = expanded ? 40 : 26
   const plotW = Math.max(40, W - padL - padR)
-  const plotH = H - padT - padB
+  const plotH = Math.max(40, H - padT - padB)
   const n = rounds.length
   const valOf = (m?: LaneMetrics) => (m ? (metric === 'tools' ? m.toolCalls : Math.round(m.elapsedMs / 100) / 10) : null)
   let yMax = 1
@@ -453,27 +473,46 @@ function FlywheelChart({
   const fmtY = (v: number) => (metric === 'time' ? `${v}` : `${Math.round(v)}`)
 
   return (
-    <div className="border-b bg-gradient-to-b from-slate-50 to-white px-6 pb-3 pt-3">
-      <div className="mb-2 flex items-center justify-between">
+    <div
+      className={
+        expanded
+          ? 'flex h-full flex-col bg-gradient-to-b from-slate-50 to-white px-8 pb-6 pt-5'
+          : 'border-b bg-gradient-to-b from-slate-50 to-white px-6 pb-3 pt-3'
+      }
+    >
+      <div className={`flex items-center justify-between ${expanded ? 'mb-4' : 'mb-2'}`}>
         <div className="flex items-baseline gap-2">
-          <span className="text-xs font-semibold tracking-tight text-slate-800">Improvement over rounds</span>
-          <span className="text-[11px] text-slate-400">{metric === 'tools' ? 'tool calls' : 'agent seconds'} per round · lower is better</span>
+          <span className={`font-semibold tracking-tight text-slate-800 ${expanded ? 'text-xl' : 'text-xs'}`}>Improvement over rounds</span>
+          <span className={`text-slate-400 ${expanded ? 'text-sm' : 'text-[11px]'}`}>
+            {metric === 'tools' ? 'tool calls' : 'agent seconds'} per round · lower is better
+          </span>
         </div>
-        <div className="flex gap-1 rounded-md bg-slate-100 p-0.5">
-          {(['tools', 'time'] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => onMetric(m)}
-              className={`rounded px-2.5 py-1 text-[10px] font-medium transition ${
-                metric === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}
-            >
-              {m === 'tools' ? 'tool calls' : 'time'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 rounded-md bg-slate-100 p-0.5">
+            {(['tools', 'time'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => onMetric(m)}
+                className={`rounded font-medium transition ${expanded ? 'px-3.5 py-1.5 text-xs' : 'px-2.5 py-1 text-[10px]'} ${
+                  metric === m ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {m === 'tools' ? 'tool calls' : 'time'}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={onToggleExpand}
+            title={expanded ? 'Collapse (Esc)' : 'Expand to full screen'}
+            className={`rounded-md border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-700 ${
+              expanded ? 'px-3 py-1.5 text-sm' : 'px-2 py-1 text-[11px]'
+            }`}
+          >
+            {expanded ? '✕ close' : '⤢ expand'}
+          </button>
         </div>
       </div>
-      <div ref={wrapRef} className="w-full">
+      <div ref={wrapRef} className={expanded ? 'min-h-0 w-full flex-1' : 'w-full'} style={expanded ? undefined : { height: 168 }}>
         <svg width={W} height={H} className="block">
           <defs>
             <linearGradient id="bFill" x1="0" y1="0" x2="0" y2="1">
@@ -485,14 +524,14 @@ function FlywheelChart({
           {[0, 0.25, 0.5, 0.75, 1].map((f) => (
             <g key={f}>
               <line x1={padL} y1={padT + plotH * f} x2={W - padR} y2={padT + plotH * f} stroke="#eef2f6" strokeWidth={1} />
-              <text x={padL - 8} y={padT + plotH * f + 3} textAnchor="end" fontSize={10} fill="#94a3b8">
+              <text x={padL - 8} y={padT + plotH * f + 3 * fz} textAnchor="end" fontSize={10 * fz} fill="#94a3b8">
                 {fmtY(yMax * (1 - f))}
               </text>
             </g>
           ))}
           {/* x labels */}
           {rounds.map((_, i) => (
-            <text key={i} x={xFor(i)} y={H - 8} textAnchor="middle" fontSize={10} fill="#94a3b8">
+            <text key={i} x={xFor(i)} y={H - 10 * fz} textAnchor="middle" fontSize={10 * fz} fill="#94a3b8">
               R{i + 1}
             </text>
           ))}
@@ -515,11 +554,19 @@ function FlywheelChart({
                     fill="url(#bFill)"
                   />
                 )}
-                <path d={d} fill="none" stroke={lane.color} strokeWidth={isHero ? 3 : 1.75} strokeLinejoin="round" strokeLinecap="round" opacity={isHero ? 1 : 0.85} />
+                <path
+                  d={d}
+                  fill="none"
+                  stroke={lane.color}
+                  strokeWidth={(isHero ? 3 : 1.75) * fz}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                  opacity={isHero ? 1 : 0.85}
+                />
                 {pts.map((p, i) => (
-                  <circle key={i} cx={p[0]} cy={p[1]} r={isHero ? 4 : 3} fill="#fff" stroke={lane.color} strokeWidth={isHero ? 3 : 2} />
+                  <circle key={i} cx={p[0]} cy={p[1]} r={(isHero ? 4 : 3) * fz} fill="#fff" stroke={lane.color} strokeWidth={(isHero ? 3 : 2) * fz} />
                 ))}
-                <text x={last[0] + 8} y={last[1] + 3.5} fontSize={11} fontWeight={isHero ? 700 : 500} fill={lane.color}>
+                <text x={last[0] + 8 * fz} y={last[1] + 3.5 * fz} fontSize={11 * fz} fontWeight={isHero ? 700 : 500} fill={lane.color}>
                   {fmtY(last[2])}
                 </text>
               </g>
@@ -527,9 +574,9 @@ function FlywheelChart({
           })}
         </svg>
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+      <div className={`flex flex-wrap gap-x-4 gap-y-1 ${expanded ? 'mt-3' : 'mt-1'}`}>
         {LANES.map((l) => (
-          <span key={l.id} className="flex items-center gap-1.5 text-[10px] text-slate-500">
+          <span key={l.id} className={`flex items-center gap-1.5 text-slate-500 ${expanded ? 'text-sm' : 'text-[10px]'}`}>
             <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: l.color }} /> {l.title}
           </span>
         ))}
