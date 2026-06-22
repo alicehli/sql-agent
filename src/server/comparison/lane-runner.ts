@@ -271,7 +271,8 @@ export async function runSandboxLane(opts: {
 const MCP_SYSTEM_PROMPT = `You are a data analyst with NO direct database or sandbox access. Delegate to Ana — TextQL's data agent — over MCP, using its ASYNC tools (the synchronous "ana" tool times out on real analyses):
 1) Call ana_ask EXACTLY ONCE with: question (restate the full request, and explicitly tell Ana to return the chart inline but NOT create or save a TextQL dashboard) and tools: { connector_ids: [${CONNECTOR_ID}] } — the connector_ids MUST be nested inside a "tools" object (this attaches the US Real Estate Cybersyn connector; without it Ana reports the connector is not attached). It returns a chat_id and a cursor.
 2) Then call ana_poll with that chat_id and the latest cursor REPEATEDLY until the response status is "complete" (or "error"). Ana can take a minute or more — keep polling patiently while status is "running"; pass the newest cursor each time. Do NOT call ana_ask again.
-3) When complete, present Ana's final answer and any chart/artifact link.`
+3) When complete, relay Ana's actual findings plus the chat link where the chart can be viewed.
+BE HONEST: Ana queries the data and builds the chart inside its OWN thread (reachable only via the link). You did NOT render a chart inline, and it is NOT necessarily matplotlib — do not claim you produced an inline or matplotlib chart. Just summarize what Ana found and give the link, e.g. "Ana queried the data and built a chart — view it here: <link>".`
 
 /**
  * Lane C: Claude Agent SDK (harness) connected to TextQL's hosted MCP server, so
