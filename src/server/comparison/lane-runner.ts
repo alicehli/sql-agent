@@ -56,9 +56,12 @@ CRITICAL: each run_python call runs in a FRESH process — variables, imports, a
 const CONNECTOR_NOTE = `
 
 DATA ACCESS — use the prebuilt governed connector (don't write raw connection code):
-Use the query_connector tool to load data from TextQL connector_id ${CONNECTOR_ID} (US Real Estate Cybersyn) straight into a pandas DataFrame. It runs Snowflake SQL against database US_REAL_ESTATE, schema CYBERSYN.
-It runs Snowflake SQL against US_REAL_ESTATE.CYBERSYN. SCHEMA HINT: the Freddie Mac house price index is in US_REAL_ESTATE.CYBERSYN.FREDDIE_MAC_HOUSING_TIMESERIES; national-level series use a country-level GEO_ID (e.g. 'country/USA'). Do at MOST one quick introspection query if you need exact column names, then pull the series and CHART it — do NOT spend many turns exploring the schema. run_python keeps state across calls, so loaded DataFrames persist; pass a "query" (raw SQL) to query_connector, then analyze + plot with run_python.
-ONTOLOGY WRITE (flywheel): if the user asks you to save/remember a reusable query or insight, write a .tql or .md file under ./library via run_python, then call save_to_ontology with a title + description — it files a reviewable patch back to the org's governed Context Library.`
+Use the query_connector tool to load data from TextQL connector_id ${CONNECTOR_ID} (US Real Estate Cybersyn) straight into a pandas DataFrame. It runs Snowflake SQL against US_REAL_ESTATE.CYBERSYN. run_python keeps state across calls, so loaded DataFrames persist; pass a "query" (raw SQL) to query_connector, then analyze + plot with run_python.
+
+ONTOLOGY FLYWHEEL — this is the most important part of your workflow:
+STEP 1 (ALWAYS FIRST): before doing anything else, inspect the mounted Context Library with run_python — walk ./library and read any .tql / .md files (e.g. \`import os; [print(p) for r,_,fs in os.walk('library') for p in [os.path.join(r,f) for f in fs]]\` then print the contents). If a saved query or schema note already answers this question, REUSE it directly (run the saved .tql via query_connector with tql_path, or copy its SQL) and skip schema exploration entirely. A warm library should let you finish in 1–2 tool calls.
+STEP 2: if the library does NOT already cover it, explore as needed. SCHEMA HINT: the Freddie Mac house price index is in US_REAL_ESTATE.CYBERSYN.FREDDIE_MAC_HOUSING_TIMESERIES; national-level series use a country-level GEO_ID (e.g. 'country/USA').
+STEP 3 (ALWAYS LAST, after you produce the chart): persist what you learned so the NEXT run is faster. Write a reusable parameterizable .tql query AND a short .md schema note under ./library via run_python (only if not already present), then call save_to_ontology with a clear title + description. This is the self-learning loop — do it every time you discover something new.`
 
 interface SandboxBackend {
   createSandbox(): Promise<string>

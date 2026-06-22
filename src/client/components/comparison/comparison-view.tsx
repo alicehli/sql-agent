@@ -31,13 +31,21 @@ interface Turn {
   running: boolean
 }
 
-const LANES: { id: LaneId; title: string; sub: string }[] = [
-  { id: 'modal', title: 'A · Generic sandbox', sub: 'Claude Agent SDK (harness) + Modal (DIY)' },
-  { id: 'sandcastle', title: 'B · TextQL Sandcastle', sub: 'Claude Agent SDK (harness) + Sandcastle' },
-  { id: 'mcp', title: 'C · Ana via MCP', sub: 'Claude Agent SDK (harness) + TextQL MCP → Ana' },
-  { id: 'ana', title: 'D · Ana API', sub: 'direct /v2/chats call' },
-]
+interface OntoFile {
+  name: string
+  additions?: number
+  deletions?: number
+  is_new?: boolean
+  is_delete?: boolean
+  is_rename?: boolean
+}
 
+const LANES: { id: LaneId; title: string; sub: string; color: string }[] = [
+  { id: 'modal', title: 'A · Generic sandbox', sub: 'Claude Agent SDK (harness) + Modal (DIY)', color: '#64748b' },
+  { id: 'sandcastle', title: 'B · TextQL Sandcastle', sub: 'Claude Agent SDK (harness) + Sandcastle', color: '#10b981' },
+  { id: 'mcp', title: 'C · Ana via MCP', sub: 'Claude Agent SDK (harness) + TextQL MCP → Ana', color: '#8b5cf6' },
+  { id: 'ana', title: 'D · Ana API', sub: 'direct /v2/chats call', color: '#f59e0b' },
+]
 const FONT = { fontFamily: "'JetBrains Mono', monospace" } as const
 const isImageName = (s?: string) => !!s && /\.(png|jpe?g|gif|webp|svg)$/i.test(s)
 const toolCount = (t?: Turn) => (t ? t.parts.filter((p) => p.kind === 'tool').length : 0)
@@ -55,6 +63,8 @@ function newTurn(q: string): Turn {
 const newSessionId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `s-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
 
+type RoundMetrics = Partial<Record<LaneId, LaneMetrics>>
+
 export function ComparisonView() {
   const [question, setQuestion] = useState(
     'From the CYBERSYN US real-estate data (Freddie Mac housing timeseries), chart the national house price index over time.'
@@ -62,11 +72,19 @@ export function ComparisonView() {
   const [lanes, setLanes] = useState<Record<LaneId, Turn[]>>({ modal: [], sandcastle: [], mcp: [], ana: [] })
   const [running, setRunning] = useState<Record<LaneId, boolean>>({ modal: false, sandcastle: false, mcp: false, ana: false })
   const [drafts, setDrafts] = useState<Record<LaneId, string>>({ modal: '', sandcastle: '', mcp: '', ana: '' })
+  const [rounds, setRounds] = useState<RoundMetrics[]>([])
+  const [chartMetric, setChartMetric] = useState<'tools' | 'time'>('tools')
+  // Ontology review between rounds (lane B's ./library edits).
+  const [ontoFiles, setOntoFiles] = useState<OntoFile[] | null>(null)
+  const [ontoLoading, setOntoLoading] = useState(false)
+  const [rejected, setRejected] = useState<Set<string>>(new Set())
+  const reviewedRef = useRef<Set<string>>(new Set())
   const sessionId = useRef<string>('')
   const abortRef = useRef<AbortController | null>(null)
   if (!sessionId.current) sessionId.current = newSessionId()
 
   const anyRunning = running.modal || running.sandcastle || running.mcp || running.ana
+  const roundNum = rounds.length
 
   function patchLast(id: LaneId, fn: (t: Turn) => Turn) {
     setLanes((prev) => {
@@ -116,15 +134,16 @@ export function ComparisonView() {
     else if (type === 'error') patchLast(id, (t) => ({ ...t, running: false, error: String(ev.message || 'error') }))
   }
 
-  async function runLane(id: LaneId, q: string, signal: AbortSignal) {
+  async function runLane(id: LaneId, q: string, signal: AbortSignal, opts?: { fresh?: boolean; round?: number }) {
     if (running[id]) return
     setRunning((r) => ({ ...r, [id]: true }))
     setLanes((prev) => ({ ...prev, [id]: [...prev[id], newTurn(q)] }))
+    let finalMetrics: LaneMetrics | undefined
     try {
       const resp = await fetch(`/api/compare/${id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q, sessionId: sessionId.current }),
+        body: JSON.stringify({ question: q, sessionId: sessionId.current, fresh: !!opts?.fresh }),
         signal,
       })
       if (!resp.ok || !resp.body) {
@@ -143,13 +162,27 @@ export function ComparisonView() {
         for (const line of lines) {
           if (!line.trim()) continue
           try {
-            handleEvent(id, JSON.parse(line))
+            const ev = JSON.parse(line)
+            if (ev.type === 'metrics') finalMetrics = ev as LaneMetrics
+            handleEvent(id, ev)
           } catch {
             // ignore partial lines
           }
         }
       }
       patchLast(id, (t) => ({ ...t, running: false }))
+      if (opts?.round !== undefined && finalMetrics) {
+        const m = finalMetrics
+        const r = opts.round
+        setRounds((prev) => {
+          const next = prev.slice()
+          while (next.length <= r) next.push({})
+          next[r] = { ...next[r], [id]: m }
+          return next
+        })
+      }
+      // After lane B's fresh round, surface the ontology it wrote for review.
+      if (opts?.fresh && id === 'sandcastle') void fetchOntology()
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError')
         patchLast(id, (t) => ({ ...t, running: false, error: e instanceof Error ? e.message : String(e) }))
@@ -163,11 +196,16 @@ export function ComparisonView() {
     return abortRef.current.signal
   }
 
-  function runAll() {
+  // A flywheel round: every lane runs the same question as a FRESH conversation
+  // on the SAME sandbox, so any speedup comes from accumulated ontology.
+  function runRound() {
     const q = question.trim()
     if (!q || anyRunning) return
+    const round = rounds.length
+    setRounds((prev) => [...prev, {}])
+    setOntoFiles(null)
     const signal = ensureAbort()
-    LANES.forEach((l) => runLane(l.id, q, signal))
+    LANES.forEach((l) => runLane(l.id, q, signal, { fresh: true, round }))
   }
 
   function runOne(id: LaneId) {
@@ -177,13 +215,48 @@ export function ComparisonView() {
     runLane(id, q, ensureAbort())
   }
 
+  async function fetchOntology() {
+    setOntoLoading(true)
+    try {
+      const r = await fetch(`/api/compare/ontology?sessionId=${encodeURIComponent(sessionId.current)}`)
+      if (!r.ok) return
+      const data = (await r.json()) as { files?: OntoFile[] }
+      const fresh = (data.files || []).filter((f) => !reviewedRef.current.has(f.name))
+      setOntoFiles(fresh.length ? fresh : null)
+      setRejected(new Set())
+    } catch {
+      // best effort
+    } finally {
+      setOntoLoading(false)
+    }
+  }
+
+  async function applyDecision() {
+    const files = ontoFiles || []
+    const reject = files.filter((f) => rejected.has(f.name)).map((f) => f.name)
+    files.forEach((f) => reviewedRef.current.add(f.name))
+    setOntoFiles(null)
+    try {
+      await fetch('/api/compare/ontology/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId.current, reject }),
+      })
+    } catch {
+      // best effort
+    }
+  }
+
   async function reset() {
     abortRef.current?.abort()
     abortRef.current = null
     const old = sessionId.current
     sessionId.current = newSessionId()
+    reviewedRef.current = new Set()
     setLanes({ modal: [], sandcastle: [], mcp: [], ana: [] })
     setRunning({ modal: false, sandcastle: false, mcp: false, ana: false })
+    setRounds([])
+    setOntoFiles(null)
     try {
       await fetch('/api/compare/reset', {
         method: 'POST',
@@ -200,12 +273,21 @@ export function ComparisonView() {
       <div className="flex items-center justify-between border-b px-6 py-3">
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-semibold tracking-tight text-slate-900">Versus</h1>
-          <span className="text-xs text-slate-500">one question → four backends · same Claude harness for A–C · multi-turn</span>
+          <span className="text-xs text-slate-500">
+            same question, every round · fresh conversation, same sandbox · ontology compounds → fewer tool calls
+          </span>
         </div>
-        <button onClick={reset} className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50">
-          Reset
-        </button>
+        <div className="flex items-center gap-3">
+          {roundNum > 0 && <span className="text-xs font-medium text-slate-600">round {roundNum}</span>}
+          <button onClick={reset} className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50">
+            Reset
+          </button>
+        </div>
       </div>
+
+      {rounds.length > 0 && (
+        <FlywheelChart rounds={rounds} metric={chartMetric} onMetric={setChartMetric} />
+      )}
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden p-2 md:grid-cols-2 xl:grid-cols-4">
         {LANES.map((lane) => {
@@ -214,15 +296,18 @@ export function ComparisonView() {
           return (
             <div key={lane.id} className="flex min-h-0 flex-col rounded border border-slate-200 bg-white">
               <div className="flex items-center justify-between border-b px-3 py-2">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
-                  <div className="text-[11px] text-slate-500">{lane.sub}</div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: lane.color }} />
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{lane.title}</div>
+                    <div className="text-[11px] text-slate-500">{lane.sub}</div>
+                  </div>
                 </div>
                 {running[lane.id] && <span className="text-[11px] text-emerald-600">● live</span>}
               </div>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-                {turns.length === 0 && <div className="text-xs text-slate-400">Ask a question to start.</div>}
+                {turns.length === 0 && <div className="text-xs text-slate-400">Run a round to start.</div>}
                 {turns.map((t, ti) => (
                   <TurnBlock key={ti} turn={t} />
                 ))}
@@ -246,7 +331,7 @@ export function ComparisonView() {
                   value={drafts[lane.id]}
                   onChange={(e) => setDrafts((d) => ({ ...d, [lane.id]: e.target.value }))}
                   onKeyDown={(e) => e.key === 'Enter' && runOne(lane.id)}
-                  placeholder={`message ${lane.id}…`}
+                  placeholder={`follow-up to ${lane.id}…`}
                   className="min-w-0 flex-1 rounded border border-slate-200 px-2 py-1 text-[11px] outline-none focus:border-slate-400"
                   style={FONT}
                   disabled={running[lane.id]}
@@ -264,13 +349,30 @@ export function ComparisonView() {
         })}
       </div>
 
+      {(ontoFiles || ontoLoading) && (
+        <OntologyReview
+          files={ontoFiles}
+          loading={ontoLoading}
+          rejected={rejected}
+          onToggle={(name) =>
+            setRejected((prev) => {
+              const next = new Set(prev)
+              if (next.has(name)) next.delete(name)
+              else next.add(name)
+              return next
+            })
+          }
+          onApply={applyDecision}
+        />
+      )}
+
       <div className="border-t-2 border-slate-900 bg-slate-50 px-6 py-4 shadow-[0_-6px_16px_rgba(0,0,0,0.05)]">
         <div className="mx-auto max-w-5xl">
           <div className="flex gap-2">
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && runAll()}
+              onKeyDown={(e) => e.key === 'Enter' && runRound()}
               placeholder="Ask all four the same question…"
               className="flex-1 rounded-md border-2 border-slate-300 bg-white px-4 py-3 text-base shadow-sm outline-none focus:border-slate-900"
               style={FONT}
@@ -288,11 +390,164 @@ export function ComparisonView() {
                 Stop
               </button>
             ) : (
-              <button onClick={runAll} className="rounded-md bg-slate-900 px-8 py-3 text-base font-semibold text-white shadow-sm hover:bg-slate-800">
-                Run all →
+              <button
+                onClick={runRound}
+                className="rounded-md bg-slate-900 px-8 py-3 text-base font-semibold text-white shadow-sm hover:bg-slate-800"
+              >
+                Run round {roundNum + 1} →
               </button>
             )}
           </div>
+          {roundNum > 0 && !anyRunning && (
+            <div className="mt-2 text-center text-[11px] text-slate-500">
+              Review &amp; accept the ontology B wrote, then run the next round to watch its curve bend down.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FlywheelChart({
+  rounds,
+  metric,
+  onMetric,
+}: {
+  rounds: RoundMetrics[]
+  metric: 'tools' | 'time'
+  onMetric: (m: 'tools' | 'time') => void
+}) {
+  const W = 1000
+  const H = 150
+  const padL = 38
+  const padR = 10
+  const padT = 12
+  const padB = 22
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+  const n = rounds.length
+  const valOf = (m?: LaneMetrics) => (m ? (metric === 'tools' ? m.toolCalls : m.elapsedMs / 1000) : null)
+  let yMax = 1
+  for (const r of rounds) for (const l of LANES) {
+    const v = valOf(r[l.id])
+    if (v != null && v > yMax) yMax = v
+  }
+  yMax = Math.ceil(yMax * 1.1)
+  const xFor = (i: number) => padL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW)
+  const yFor = (v: number) => padT + plotH - (v / yMax) * plotH
+
+  return (
+    <div className="border-b bg-slate-50 px-6 py-2">
+      <div className="mb-1 flex items-center justify-between">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          improvement over rounds · {metric === 'tools' ? 'tool calls' : 'agent seconds'} (lower = better)
+        </div>
+        <div className="flex gap-1">
+          {(['tools', 'time'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => onMetric(m)}
+              className={`rounded px-2 py-0.5 text-[10px] ${metric === m ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}
+            >
+              {m === 'tools' ? 'tool calls' : 'time'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-[150px] w-full" preserveAspectRatio="none">
+        {/* y gridlines */}
+        {[0, 0.5, 1].map((f) => (
+          <g key={f}>
+            <line x1={padL} y1={padT + plotH * f} x2={W - padR} y2={padT + plotH * f} stroke="#e2e8f0" strokeWidth={1} />
+            <text x={padL - 5} y={padT + plotH * f + 3} textAnchor="end" fontSize={9} fill="#94a3b8">
+              {Math.round(yMax * (1 - f))}
+            </text>
+          </g>
+        ))}
+        {/* x labels */}
+        {rounds.map((_, i) => (
+          <text key={i} x={xFor(i)} y={H - 6} textAnchor="middle" fontSize={9} fill="#94a3b8">
+            {i + 1}
+          </text>
+        ))}
+        {/* lane lines */}
+        {LANES.map((lane) => {
+          const pts: Array<[number, number]> = []
+          rounds.forEach((r, i) => {
+            const v = valOf(r[lane.id])
+            if (v != null) pts.push([xFor(i), yFor(v)])
+          })
+          if (pts.length === 0) return null
+          const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+          return (
+            <g key={lane.id}>
+              <path d={d} fill="none" stroke={lane.color} strokeWidth={2} />
+              {pts.map((p, i) => (
+                <circle key={i} cx={p[0]} cy={p[1]} r={2.5} fill={lane.color} />
+              ))}
+            </g>
+          )
+        })}
+      </svg>
+      <div className="mt-1 flex flex-wrap gap-3">
+        {LANES.map((l) => (
+          <span key={l.id} className="flex items-center gap-1 text-[10px] text-slate-500">
+            <span className="inline-block h-2 w-3 rounded-sm" style={{ backgroundColor: l.color }} /> {l.title}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function OntologyReview({
+  files,
+  loading,
+  rejected,
+  onToggle,
+  onApply,
+}: {
+  files: OntoFile[] | null
+  loading: boolean
+  rejected: Set<string>
+  onToggle: (name: string) => void
+  onApply: () => void
+}) {
+  return (
+    <div className="border-t-2 border-emerald-500 bg-emerald-50 px-6 py-3">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-xs font-semibold text-emerald-800">
+            🧠 Ontology written by lane B this round — accept to compound, reject to discard
+          </div>
+          {files && (
+            <button onClick={onApply} className="rounded bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
+              Apply ({files.filter((f) => !rejected.has(f.name)).length} kept) →
+            </button>
+          )}
+        </div>
+        {loading && <div className="text-[11px] text-emerald-700">checking ./library…</div>}
+        {files && files.length === 0 && <div className="text-[11px] text-emerald-700">No new ontology this round.</div>}
+        <div className="flex flex-wrap gap-2">
+          {(files || []).map((f) => {
+            const rej = rejected.has(f.name)
+            return (
+              <button
+                key={f.name}
+                onClick={() => onToggle(f.name)}
+                className={`flex items-center gap-2 rounded border px-3 py-1.5 text-[11px] ${
+                  rej ? 'border-red-200 bg-red-50 text-red-400 line-through' : 'border-emerald-300 bg-white text-emerald-800'
+                }`}
+                title={rej ? 'will be discarded' : 'will be kept for next round'}
+              >
+                <span>{rej ? '✗' : '✓'}</span>
+                <span className="font-medium">{f.name}</span>
+                {f.is_new && <span className="rounded bg-emerald-100 px-1 text-[9px] text-emerald-600">new</span>}
+                {typeof f.additions === 'number' && <span className="text-[9px] text-slate-400">+{f.additions}</span>}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
