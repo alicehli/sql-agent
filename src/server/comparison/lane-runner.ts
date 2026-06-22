@@ -39,6 +39,10 @@ const MODEL = process.env.COMPARE_MODEL || 'sonnet'
 // per-poll inference latency (the main overhead) low.
 const MCP_MODEL = process.env.COMPARE_MCP_MODEL || 'haiku'
 const CONNECTOR_ID = Number(process.env.COMPARE_CONNECTOR_ID || 628)
+// Ana auto-persists charts as TextQL dashboards; for the demo we want the chart
+// returned inline without cluttering the org with dashboards.
+const NO_DASHBOARD_NOTE =
+  ' Important: return the chart/visualization inline in your answer (an image or artifact link is fine), but do NOT create or save a TextQL dashboard.'
 
 // Lane A: no prebuilt connector — wire Snowflake yourself.
 const DIY_NOTE = `
@@ -266,7 +270,7 @@ export async function runSandboxLane(opts: {
 
 // Lane C system prompt: Claude has no DB access; it delegates to Ana via MCP.
 const MCP_SYSTEM_PROMPT = `You are a data analyst with NO direct database or sandbox access. Delegate to Ana — TextQL's data agent — over MCP, using its ASYNC tools (the synchronous "ana" tool times out on real analyses):
-1) Call ana_ask EXACTLY ONCE with: question (restate the full request, including that you want a chart of the national house price index over time) and connector_ids: [${CONNECTOR_ID}] (REQUIRED — so Ana can access the US Real Estate Cybersyn data). It returns a chat_id and a cursor.
+1) Call ana_ask EXACTLY ONCE with: question (restate the full request, and explicitly tell Ana to return the chart inline but NOT create or save a TextQL dashboard) and connector_ids: [${CONNECTOR_ID}] (REQUIRED — so Ana can access the US Real Estate Cybersyn data). It returns a chat_id and a cursor.
 2) Then call ana_poll with that chat_id and the latest cursor REPEATEDLY until the response status is "complete" (or "error"). Ana can take a minute or more — keep polling patiently while status is "running"; pass the newest cursor each time. Do NOT call ana_ask again.
 3) When complete, present Ana's final answer and any chart/artifact link.`
 
@@ -360,10 +364,11 @@ export async function runAnaLane(opts: {
 
   try {
     emit({ type: 'status', text: sess.chatId ? 'continuing Ana chat…' : 'calling Ana…' })
+    const q = question + NO_DASHBOARD_NOTE
     const body: Record<string, unknown> = sess.chatId
-      ? { question, chat_id: sess.chatId }
+      ? { question: q, chat_id: sess.chatId }
       : {
-          question,
+          question: q,
           tools: {
             python_enabled: true,
             sql_enabled: true,
