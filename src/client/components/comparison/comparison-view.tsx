@@ -287,15 +287,19 @@ export function ComparisonView() {
         </div>
         <div className="flex items-center gap-3">
           {roundNum > 0 && <span className="text-xs font-medium text-slate-600">round {roundNum}</span>}
+          {roundNum > 0 && (
+            <button
+              onClick={() => setChartFull(true)}
+              className="rounded bg-slate-900 px-3 py-1 text-xs font-semibold text-white hover:bg-slate-800"
+            >
+              📈 Analysis
+            </button>
+          )}
           <button onClick={reset} className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50">
             Reset
           </button>
         </div>
       </div>
-
-      {rounds.length > 0 && !chartFull && (
-        <FlywheelChart rounds={rounds} metric={chartMetric} onMetric={setChartMetric} expanded={false} onToggleExpand={() => setChartFull(true)} />
-      )}
 
       {chartFull && (
         <div className="fixed inset-0 z-50 flex flex-col bg-white">
