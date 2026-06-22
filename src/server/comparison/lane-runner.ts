@@ -57,7 +57,7 @@ const CONNECTOR_NOTE = `
 
 DATA ACCESS — use the prebuilt governed connector (don't write raw connection code):
 Use the query_connector tool to load data from TextQL connector_id ${CONNECTOR_ID} (US Real Estate Cybersyn) straight into a pandas DataFrame. It runs Snowflake SQL against database US_REAL_ESTATE, schema CYBERSYN.
-You do NOT know the exact tables/columns up front — FIRST introspect: query_connector with a SQL like "SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM US_REAL_ESTATE.INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='CYBERSYN'". Then query fully-qualified tables (US_REAL_ESTATE.CYBERSYN.<TABLE>). run_python keeps state across calls, so loaded DataFrames persist. Pass a "query" (raw SQL) to query_connector; then analyze with run_python.
+It runs Snowflake SQL against US_REAL_ESTATE.CYBERSYN. SCHEMA HINT: the Freddie Mac house price index is in US_REAL_ESTATE.CYBERSYN.FREDDIE_MAC_HOUSING_TIMESERIES; national-level series use a country-level GEO_ID (e.g. 'country/USA'). Do at MOST one quick introspection query if you need exact column names, then pull the series and CHART it — do NOT spend many turns exploring the schema. run_python keeps state across calls, so loaded DataFrames persist; pass a "query" (raw SQL) to query_connector, then analyze + plot with run_python.
 ONTOLOGY WRITE (flywheel): if the user asks you to save/remember a reusable query or insight, write a .tql or .md file under ./library via run_python, then call save_to_ontology with a title + description — it files a reviewable patch back to the org's governed Context Library.`
 
 interface SandboxBackend {
@@ -227,7 +227,7 @@ export async function runSandboxLane(opts: {
         allowedTools,
         model: MODEL,
         systemPrompt,
-        maxTurns: 12,
+        maxTurns: 25,
         permissionMode: 'bypassPermissions',
         ...(sess.resumeId ? { resume: sess.resumeId } : {}),
       } as Parameters<typeof query>[0]['options'],
