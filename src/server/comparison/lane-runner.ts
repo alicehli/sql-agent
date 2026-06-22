@@ -31,13 +31,12 @@ export type LaneEvent =
 type Emit = (e: LaneEvent) => void
 
 const SHARED_SYSTEM_PROMPT = `You are a data analyst working in a Python sandbox, available through the run_python tool.
-When the user asks for a computation, analysis, or chart, WRITE and RUN Python (numpy/matplotlib/pandas) to do it — don't just describe it.
-Save any plot to a PNG file in the working directory, then briefly summarize what you did. Keep it concise.`
+For ANY data question, once you have the data you MUST create a visualization in the SAME turn: write and run matplotlib code to plot it and save the figure as a PNG in the working directory. Do this proactively — never just describe the numbers in text, and never wait to be asked for a chart. Then briefly summarize. Keep it concise.`
 
 const MODEL = process.env.COMPARE_MODEL || 'sonnet'
 // Lane C just orchestrates the MCP poll loop — a fast/cheap model keeps the
 // per-poll inference latency (the main overhead) low.
-const MCP_MODEL = process.env.COMPARE_MCP_MODEL || 'haiku'
+const MCP_MODEL = process.env.COMPARE_MCP_MODEL || 'sonnet'
 const CONNECTOR_ID = Number(process.env.COMPARE_CONNECTOR_ID || 628)
 // Ana auto-persists charts as TextQL dashboards; for the demo we want the chart
 // returned inline without cluttering the org with dashboards.
@@ -270,7 +269,7 @@ export async function runSandboxLane(opts: {
 
 // Lane C system prompt: Claude has no DB access; it delegates to Ana via MCP.
 const MCP_SYSTEM_PROMPT = `You are a data analyst with NO direct database or sandbox access. Delegate to Ana — TextQL's data agent — over MCP, using its ASYNC tools (the synchronous "ana" tool times out on real analyses):
-1) Call ana_ask EXACTLY ONCE with: question (restate the full request, and explicitly tell Ana to return the chart inline but NOT create or save a TextQL dashboard) and connector_ids: [${CONNECTOR_ID}] (REQUIRED — so Ana can access the US Real Estate Cybersyn data). It returns a chat_id and a cursor.
+1) Call ana_ask EXACTLY ONCE with: question (restate the full request, and explicitly tell Ana to return the chart inline but NOT create or save a TextQL dashboard) and tools: { connector_ids: [${CONNECTOR_ID}] } — the connector_ids MUST be nested inside a "tools" object (this attaches the US Real Estate Cybersyn connector; without it Ana reports the connector is not attached). It returns a chat_id and a cursor.
 2) Then call ana_poll with that chat_id and the latest cursor REPEATEDLY until the response status is "complete" (or "error"). Ana can take a minute or more — keep polling patiently while status is "running"; pass the newest cursor each time. Do NOT call ana_ask again.
 3) When complete, present Ana's final answer and any chart/artifact link.`
 
