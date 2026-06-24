@@ -395,7 +395,7 @@ export function ComparisonView() {
         })}
       </div>
 
-      {(ontoFiles || ontoLoading) && (
+      {(ontoFiles || (ontoLoading && !autoApprove)) && (
         <OntologyReview
           files={ontoFiles}
           loading={ontoLoading}
@@ -454,7 +454,9 @@ export function ComparisonView() {
           </div>
           {roundNum > 0 && !anyRunning && (
             <div className="mt-2 text-center text-[11px] text-slate-500">
-              Review &amp; accept the ontology B wrote, then run the next round to watch its curve bend down.
+              {autoApprove
+                ? 'Auto-accepting B’s ontology each round — just run the next round to watch its curve bend down.'
+                : 'Review & accept the ontology B wrote, then run the next round to watch its curve bend down.'}
             </div>
           )}
         </div>
