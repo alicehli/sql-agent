@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { SUITE, type Complexity, type BenchmarkQuery } from './benchmark-suite'
+import { convergenceSeries, derivedMetrics, perRunRows, runCount } from './convergence-data'
 
-type LaneId = 'modal' | 'sandcastle' | 'mcp' | 'ana'
+export type LaneId = 'modal' | 'sandcastle' | 'mcp' | 'ana'
 
-interface LaneMetrics {
+export interface LaneMetrics {
   inputTokens: number
   outputTokens: number
   totalTokens: number
@@ -47,7 +48,7 @@ interface OntoFile {
   is_rename?: boolean
 }
 
-const LANES: { id: LaneId; title: string; sub: string; color: string }[] = [
+export const LANES: { id: LaneId; title: string; sub: string; color: string }[] = [
   {
     id: 'modal',
     title: 'A · Generic sandbox',
@@ -107,7 +108,7 @@ const newSessionId = () =>
 type RoundMetrics = Partial<Record<LaneId, LaneMetrics>>
 // A suite cell holds every repeated run for a lane (runsPerQuery of them), so the
 // Insights panel can report a distribution rather than a single noisy sample.
-type LaneSamples = Partial<Record<LaneId, LaneMetrics[]>>
+export type LaneSamples = Partial<Record<LaneId, LaneMetrics[]>>
 
 export function ComparisonView() {
   const [question, setQuestion] = useState(
@@ -1380,6 +1381,9 @@ function QueryStats({ query, ls }: { query: BenchmarkQuery; ls: LaneSamples }) {
         <ConfidenceBadge metric="tool calls" conf={toolConf} />
         <ConfidenceBadge metric="time" conf={timeConf} />
       </div>
+      <DerivedMetrics ls={ls} />
+      <PerRunTable ls={ls} />
+      <ConvergenceChart ls={ls} />
     </div>
   )
 }
@@ -1419,5 +1423,215 @@ function ConfidenceBadge({ metric, conf }: { metric: string; conf: Confidence })
         · ranges {disjoint ? 'disjoint' : 'overlap'} · n={minN}
       </span>
     </span>
+  )
+}
+
+// Three derived ratios per query (lower is better for all). Favorable (< 1) values
+// read emerald, unfavorable (≥ 1) slate — both already in the Insights palette.
+// `null` (missing/zero denominator) shows an em-dash.
+function DerivedMetrics({ ls }: { ls: LaneSamples }) {
+  const d = derivedMetrics(ls)
+  const chips: { label: string; value: number | null }[] = [
+    { label: 'B vs A', value: d.speedRatioBvsA },
+    { label: 'B convergence', value: d.convergenceB },
+    { label: 'B vs D', value: d.gapBvsD },
+  ]
+  return (
+    <div className="border-t border-slate-100 px-3 py-2">
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Derived Metrics</div>
+      <div className="flex flex-wrap gap-2">
+        {chips.map((c) => {
+          const favorable = c.value != null && c.value < 1
+          return (
+            <div
+              key={c.label}
+              className={`flex flex-col rounded-md px-2.5 py-1 ${favorable ? 'bg-emerald-50' : 'bg-slate-50'}`}
+            >
+              <span className="text-[9px] uppercase tracking-wide text-slate-400">{c.label}</span>
+              <span
+                className={`text-sm font-semibold ${
+                  c.value == null ? 'text-slate-300' : favorable ? 'text-emerald-700' : 'text-slate-600'
+                }`}
+              >
+                {c.value == null ? '—' : `${c.value.toFixed(2)}×`}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// Each lane's individual runs (Run 1 … Run N) — time over tool calls per cell. Lane
+// D (ana) shows time only (tool calls n/a, as in the aggregate table). A run a lane
+// never reported renders `·`.
+function PerRunTable({ ls }: { ls: LaneSamples }) {
+  const n = runCount(ls)
+  if (n < 1) return null
+  const rows = perRunRows(ls)
+  return (
+    <div className="border-t border-slate-100 px-3 py-2">
+      <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Per-run breakdown</div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-50 text-slate-500">
+              <th className="px-3 py-2 text-left font-medium">Lane</th>
+              {Array.from({ length: n }, (_, i) => (
+                <th key={i} className="px-3 py-2 text-center font-medium">
+                  Run {i + 1}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const color = LANES.find((l) => l.id === row.id)?.color
+              return (
+                <tr key={row.id} className="border-t border-slate-100">
+                  <td className="px-3 py-2">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                      <span className="font-medium text-slate-800">{laneShort(row.id)}</span>
+                    </span>
+                  </td>
+                  {row.runs.map((mr, i) => (
+                    <td key={i} className="px-3 py-2 text-center">
+                      {mr ? (
+                        <>
+                          <div className="text-slate-700">{fmtSecs(mr.elapsedMs)}</div>
+                          {row.id !== 'ana' && (
+                            <div className="text-[10px] text-slate-400">{fmtNum(mr.toolCalls)} tc</div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-300">·</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// Per-query convergence chart in FlywheelChart's hand-rolled SVG idiom: x = runs,
+// y = agent seconds, one line per lane (sandcastle drawn last and emphasized). The
+// y-axis scales to the max seconds across ALL plotted lanes (via niceMax) so a slow
+// lane and a fast one both fit without clipping or collapsing into the axis. Only
+// rendered when there are ≥2 runs (a line needs ≥2 points).
+function ConvergenceChart({ ls }: { ls: LaneSamples }) {
+  const n = runCount(ls)
+  const series = convergenceSeries(ls)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState(640)
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect
+      if (r) setW(Math.max(160, Math.round(r.width)))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  if (n < 2 || series.length === 0) return null
+
+  const H = 180
+  const padL = 44
+  const padR = 56
+  const padT = 14
+  const padB = 26
+  const plotW = Math.max(40, w - padL - padR)
+  const plotH = Math.max(40, H - padT - padB)
+
+  let maxSeconds = 0
+  for (const s of series) for (const p of s.points) if (p.seconds > maxSeconds) maxSeconds = p.seconds
+  const yMax = niceMax(maxSeconds)
+
+  const xFor = (run: number) => padL + (n <= 1 ? plotW / 2 : (run / (n - 1)) * plotW)
+  const yFor = (sec: number) => padT + plotH - (sec / yMax) * plotH
+
+  return (
+    <div className="border-t border-slate-100 bg-gradient-to-b from-slate-50 to-white px-3 pb-3 pt-2">
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="text-xs font-semibold tracking-tight text-slate-800">Convergence across runs</span>
+        <span className="text-[10px] text-slate-400">agent seconds per run · lower is better</span>
+      </div>
+      <div ref={wrapRef} className="w-full" style={{ height: H }}>
+        <svg width={w} height={H} className="block">
+          {/* y gridlines */}
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => (
+            <g key={f}>
+              <line
+                x1={padL}
+                y1={padT + plotH * f}
+                x2={w - padR}
+                y2={padT + plotH * f}
+                stroke="#eef2f6"
+                strokeWidth={1}
+              />
+              <text x={padL - 8} y={padT + plotH * f + 3} textAnchor="end" fontSize={10} fill="#94a3b8">
+                {Math.round(yMax * (1 - f))}
+              </text>
+            </g>
+          ))}
+          {/* x labels R1 … RN */}
+          {Array.from({ length: n }, (_, i) => (
+            <text key={i} x={xFor(i)} y={H - 10} textAnchor="middle" fontSize={10} fill="#94a3b8">
+              R{i + 1}
+            </text>
+          ))}
+          {/* lane lines (draw sandcastle last so it sits on top) */}
+          {[...series]
+            .sort((a, b) => (a.id === 'sandcastle' ? 1 : 0) - (b.id === 'sandcastle' ? 1 : 0))
+            .map((s) => {
+              const lane = LANES.find((l) => l.id === s.id)
+              if (!lane) return null
+              const isHero = s.id === 'sandcastle'
+              const pts = s.points.map((p) => [xFor(p.run), yFor(p.seconds)] as [number, number])
+              if (pts.length === 0) return null
+              const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ')
+              return (
+                <g key={s.id}>
+                  <path
+                    d={d}
+                    fill="none"
+                    stroke={lane.color}
+                    strokeWidth={isHero ? 3 : 1.75}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    opacity={isHero ? 1 : 0.85}
+                  />
+                  {pts.map((p, i) => (
+                    <circle
+                      key={i}
+                      cx={p[0]}
+                      cy={p[1]}
+                      r={isHero ? 4 : 3}
+                      fill="#fff"
+                      stroke={lane.color}
+                      strokeWidth={isHero ? 3 : 2}
+                    />
+                  ))}
+                </g>
+              )
+            })}
+        </svg>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+        {LANES.map((l) => (
+          <span key={l.id} className="flex items-center gap-1.5 text-[10px] text-slate-500">
+            <span className="inline-block h-1.5 w-4 rounded-full" style={{ backgroundColor: l.color }} /> {l.title}
+          </span>
+        ))}
+      </div>
+    </div>
   )
 }
