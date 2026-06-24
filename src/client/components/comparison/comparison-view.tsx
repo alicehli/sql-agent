@@ -79,6 +79,8 @@ export function ComparisonView() {
   const [ontoFiles, setOntoFiles] = useState<OntoFile[] | null>(null)
   const [ontoLoading, setOntoLoading] = useState(false)
   const [rejected, setRejected] = useState<Set<string>>(new Set())
+  const [autoApprove, setAutoApprove] = useState(false)
+  const [autoAccepted, setAutoAccepted] = useState<{ count: number } | null>(null)
   const reviewedRef = useRef<Set<string>>(new Set())
   const sessionId = useRef<string>('')
   const abortRef = useRef<AbortController | null>(null)
@@ -212,6 +214,7 @@ export function ComparisonView() {
     const round = rounds.length
     setRounds((prev) => [...prev, {}])
     setOntoFiles(null)
+    setAutoAccepted(null)
     const signal = ensureAbort()
     LANES.forEach((l) => runLane(l.id, q, signal, { fresh: true, round }))
   }
@@ -223,6 +226,19 @@ export function ComparisonView() {
     runLane(id, q, ensureAbort())
   }
 
+  // An empty reject list is a keep-all decision.
+  async function postDecision(reject: string[]) {
+    try {
+      await fetch('/api/compare/ontology/decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId.current, reject }),
+      })
+    } catch {
+      // best effort
+    }
+  }
+
   async function fetchOntology() {
     setOntoLoading(true)
     try {
@@ -230,8 +246,14 @@ export function ComparisonView() {
       if (!r.ok) return
       const data = (await r.json()) as { files?: OntoFile[] }
       const fresh = (data.files || []).filter((f) => !reviewedRef.current.has(f.name))
-      setOntoFiles(fresh.length ? fresh : null)
-      setRejected(new Set())
+      if (autoApprove && fresh.length > 0) {
+        fresh.forEach((f) => reviewedRef.current.add(f.name))
+        await postDecision([])
+        setAutoAccepted({ count: fresh.length })
+      } else {
+        setOntoFiles(fresh.length ? fresh : null)
+        setRejected(new Set())
+      }
     } catch {
       // best effort
     } finally {
@@ -244,15 +266,7 @@ export function ComparisonView() {
     const reject = files.filter((f) => rejected.has(f.name)).map((f) => f.name)
     files.forEach((f) => reviewedRef.current.add(f.name))
     setOntoFiles(null)
-    try {
-      await fetch('/api/compare/ontology/decision', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: sessionId.current, reject }),
-      })
-    } catch {
-      // best effort
-    }
+    await postDecision(reject)
   }
 
   async function reset() {
@@ -265,6 +279,7 @@ export function ComparisonView() {
     setRunning({ modal: false, sandcastle: false, mcp: false, ana: false })
     setRounds([])
     setOntoFiles(null)
+    setAutoAccepted(null)
     try {
       await fetch('/api/compare/reset', {
         method: 'POST',
@@ -286,6 +301,15 @@ export function ComparisonView() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          <label className="flex items-center gap-1.5 text-xs text-slate-600" title="Skip the manual ontology review and keep all of lane B's writes each round">
+            <input
+              type="checkbox"
+              checked={autoApprove}
+              onChange={(e) => setAutoApprove(e.target.checked)}
+              className="h-3 w-3 accent-emerald-600"
+            />
+            auto-accept ontology
+          </label>
           {roundNum > 0 && <span className="text-xs font-medium text-slate-600">round {roundNum}</span>}
           {roundNum > 0 && (
             <button
@@ -371,7 +395,7 @@ export function ComparisonView() {
         })}
       </div>
 
-      {(ontoFiles || ontoLoading) && (
+      {(ontoFiles || (ontoLoading && !autoApprove)) && (
         <OntologyReview
           files={ontoFiles}
           loading={ontoLoading}
@@ -386,6 +410,14 @@ export function ComparisonView() {
           }
           onApply={applyDecision}
         />
+      )}
+
+      {autoAccepted && !ontoFiles && (
+        <div className="border-t-2 border-emerald-500 bg-emerald-50 px-6 py-2.5">
+          <div className="mx-auto max-w-5xl text-xs font-semibold text-emerald-800">
+            🧠 ✓ auto-accepted {autoAccepted.count} ontology file{autoAccepted.count === 1 ? '' : 's'} from lane B this round
+          </div>
+        </div>
       )}
 
       <div className="border-t-2 border-slate-900 bg-slate-50 px-6 py-4 shadow-[0_-6px_16px_rgba(0,0,0,0.05)]">
@@ -422,7 +454,9 @@ export function ComparisonView() {
           </div>
           {roundNum > 0 && !anyRunning && (
             <div className="mt-2 text-center text-[11px] text-slate-500">
-              Review &amp; accept the ontology B wrote, then run the next round to watch its curve bend down.
+              {autoApprove
+                ? 'Auto-accepting B’s ontology each round — just run the next round to watch its curve bend down.'
+                : 'Review & accept the ontology B wrote, then run the next round to watch its curve bend down.'}
             </div>
           )}
         </div>
