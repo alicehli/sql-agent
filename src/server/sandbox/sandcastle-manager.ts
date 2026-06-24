@@ -106,13 +106,17 @@ interface SandcastleStatus {
 export class SandcastleManager {
   private sandboxInfo: Map<string, SandboxInfo> = new Map()
 
+  // keyVar lets a dedicated instance authenticate as a different org (e.g. the
+  // comparison lane B) while the app-wide singleton keeps using SANDBOX_API_KEY.
+  constructor(private readonly keyVar: string = 'SANDBOX_API_KEY') {}
+
   private get baseUrl(): string {
     return (process.env.SANDBOX_BASE_URL || 'https://app.textql.com').replace(/\/+$/, '')
   }
 
   private get apiKey(): string {
-    const key = process.env.SANDBOX_API_KEY
-    if (!key) throw new Error('SANDBOX_API_KEY is not set')
+    const key = process.env[this.keyVar] || process.env.SANDBOX_API_KEY
+    if (!key) throw new Error(`${this.keyVar} (or SANDBOX_API_KEY) is not set`)
     return key
   }
 
