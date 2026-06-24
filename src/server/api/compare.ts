@@ -11,16 +11,15 @@
  */
 import { Router, type Request, type Response } from 'express'
 import { getAuth } from '@clerk/express'
-import { runSandboxLane, runMcpLane, runAnaLane, type LaneEvent } from '../comparison/lane-runner'
+import { runSandboxLane, runMcpLane, runAnaLane, compareSandboxManager, type LaneEvent } from '../comparison/lane-runner'
 import { getCompareSession, dropCompareSession, listCompareSessions, type CompareSession } from '../comparison/sessions'
 import { modalManager } from '../sandbox/modal-manager'
-import { sandboxManager } from '../sandbox/sandcastle-manager'
 
 const router = Router()
 
 async function killSessionSandboxes(s: CompareSession): Promise<void> {
   if (s.modal.sandboxId) await modalManager.killSandbox(s.modal.sandboxId).catch(() => {})
-  if (s.sandcastle.sandboxId) await sandboxManager.killSandbox(s.sandcastle.sandboxId).catch(() => {})
+  if (s.sandcastle.sandboxId) await compareSandboxManager.killSandbox(s.sandcastle.sandboxId).catch(() => {})
   // Ana chats are server-side; nothing to kill.
 }
 
@@ -69,7 +68,7 @@ router.get('/compare/ontology', async (req: Request, res: Response) => {
     return
   }
   try {
-    const d = await sandboxManager.diffLibrary(sandboxId)
+    const d = await compareSandboxManager.diffLibrary(sandboxId)
     res.json({ hasChanges: d.hasChanges, files: d.diffs, rawDiff: d.rawDiff })
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : String(e) })
@@ -108,7 +107,7 @@ router.post('/compare/ontology/decision', async (req: Request, res: Response) =>
       '  except Exception: pass',
       "print('__DELETED__' + json.dumps(_deleted))",
     ].join('\n')
-    const r = await sandboxManager.executeCode(sandboxId, code)
+    const r = await compareSandboxManager.executeCode(sandboxId, code)
     const line = (r.stdout || '').split('\n').find((l) => l.startsWith('__DELETED__'))
     const deleted = line ? JSON.parse(line.slice('__DELETED__'.length)) : []
     res.json({ ok: true, deleted })
