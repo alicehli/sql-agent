@@ -79,7 +79,6 @@ export function ComparisonView() {
   const [ontoFiles, setOntoFiles] = useState<OntoFile[] | null>(null)
   const [ontoLoading, setOntoLoading] = useState(false)
   const [rejected, setRejected] = useState<Set<string>>(new Set())
-  // Auto-accept lane B's ontology so the ad-hoc flywheel can run unattended (default OFF preserves manual review).
   const [autoApprove, setAutoApprove] = useState(false)
   const [autoAccepted, setAutoAccepted] = useState<{ count: number } | null>(null)
   const reviewedRef = useRef<Set<string>>(new Set())
@@ -227,7 +226,7 @@ export function ComparisonView() {
     runLane(id, q, ensureAbort())
   }
 
-  // Best-effort keep-all/reject decision POST; an empty reject list keeps every written file.
+  // An empty reject list is a keep-all decision.
   async function postDecision(reject: string[]) {
     try {
       await fetch('/api/compare/ontology/decision', {
@@ -248,7 +247,6 @@ export function ComparisonView() {
       const data = (await r.json()) as { files?: OntoFile[] }
       const fresh = (data.files || []).filter((f) => !reviewedRef.current.has(f.name))
       if (autoApprove && fresh.length > 0) {
-        // Hands-free: commit a keep-all decision without rendering the manual review panel.
         fresh.forEach((f) => reviewedRef.current.add(f.name))
         await postDecision([])
         setAutoAccepted({ count: fresh.length })
