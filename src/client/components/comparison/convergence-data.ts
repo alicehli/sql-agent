@@ -1,13 +1,6 @@
-// Pure data-shaping for the per-run breakdown, convergence chart, and derived
-// ratios rendered below each query's aggregate table in the Insights view. Kept
-// in its own module (no React) so the repo's `__tests__`-style vitest suite can
-// pin the shaping without a component-test harness.
-//
-// `LANES` and the lane types are owned by `comparison-view.tsx` (single source of
-// truth); we import them here. The reverse import (comparison-view → this module)
-// makes the dependency cyclic, but it is benign: the only runtime value we import
-// is `LANES`, and we read it only inside functions (never at module-eval time),
-// so it is always initialized by the time anything here runs.
+// Pure data-shaping for the Insights per-run table, convergence chart, and derived
+// ratios. comparison-view.tsx imports back from here, so read the imported `LANES`
+// only inside functions, never at module-eval time, to keep that cycle benign.
 import { LANES, type LaneId, type LaneMetrics, type LaneSamples } from './comparison-view'
 
 // Largest number of repeated-run samples any lane reported. Lanes can be ragged —
@@ -64,11 +57,8 @@ export function convergenceSeries(ls: LaneSamples | undefined): ConvergenceLaneS
   return out
 }
 
-// Bare median, duplicated from `computeStats` in comparison-view (sort ascending;
-// odd length → middle value; even length → the AVERAGE of the two middle values).
-// We duplicate rather than import `laneStat`/`computeStats` because comparison-view
-// already imports from this module — importing back would create a circular runtime
-// dependency. The unit tests pin this implementation to `computeStats`'s behavior.
+// Bare median: sort ascending; even length averages the two middle values (matches
+// computeStats, which the unit tests pin this against).
 export function median(nums: number[]): number | null {
   if (!nums.length) return null
   const sorted = [...nums].sort((a, b) => a - b)

@@ -1426,9 +1426,6 @@ function ConfidenceBadge({ metric, conf }: { metric: string; conf: Confidence })
   )
 }
 
-// Three derived ratios per query (lower is better for all). Favorable (< 1) values
-// read emerald, unfavorable (≥ 1) slate — both already in the Insights palette.
-// `null` (missing/zero denominator) shows an em-dash.
 function DerivedMetrics({ ls }: { ls: LaneSamples }) {
   const d = derivedMetrics(ls)
   const chips: { label: string; value: number | null }[] = [
@@ -1463,9 +1460,6 @@ function DerivedMetrics({ ls }: { ls: LaneSamples }) {
   )
 }
 
-// Each lane's individual runs (Run 1 … Run N) — time over tool calls per cell. Lane
-// D (ana) shows time only (tool calls n/a, as in the aggregate table). A run a lane
-// never reported renders `·`.
 function PerRunTable({ ls }: { ls: LaneSamples }) {
   const n = runCount(ls)
   if (n < 1) return null
@@ -1520,11 +1514,7 @@ function PerRunTable({ ls }: { ls: LaneSamples }) {
   )
 }
 
-// Per-query convergence chart in FlywheelChart's hand-rolled SVG idiom: x = runs,
-// y = agent seconds, one line per lane (sandcastle drawn last and emphasized). The
-// y-axis scales to the max seconds across ALL plotted lanes (via niceMax) so a slow
-// lane and a fast one both fit without clipping or collapsing into the axis. Only
-// rendered when there are ≥2 runs (a line needs ≥2 points).
+// y-axis scales to the max seconds across all plotted lanes so a wide range (slow + fast lane) fits.
 function ConvergenceChart({ ls }: { ls: LaneSamples }) {
   const n = runCount(ls)
   const series = convergenceSeries(ls)
@@ -1555,7 +1545,7 @@ function ConvergenceChart({ ls }: { ls: LaneSamples }) {
   for (const s of series) for (const p of s.points) if (p.seconds > maxSeconds) maxSeconds = p.seconds
   const yMax = niceMax(maxSeconds)
 
-  const xFor = (run: number) => padL + (n <= 1 ? plotW / 2 : (run / (n - 1)) * plotW)
+  const xFor = (run: number) => padL + (run / (n - 1)) * plotW
   const yFor = (sec: number) => padT + plotH - (sec / yMax) * plotH
 
   return (
