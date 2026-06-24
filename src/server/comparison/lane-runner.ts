@@ -14,7 +14,7 @@
 import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import { modalManager } from '../sandbox/modal-manager'
-import { sandboxManager } from '../sandbox/sandcastle-manager'
+import { SandcastleManager } from '../sandbox/sandcastle-manager'
 import type { LaneSession } from './sessions'
 
 export type LaneEvent =
@@ -37,7 +37,19 @@ const MODEL = process.env.COMPARE_MODEL || 'sonnet'
 // Lane C just orchestrates the MCP poll loop — a fast/cheap model keeps the
 // per-poll inference latency (the main overhead) low.
 const MCP_MODEL = process.env.COMPARE_MCP_MODEL || 'sonnet'
+// Each comparison lane can target its own org: a lane-specific connector id and API
+// key, each falling back to the shared COMPARE_CONNECTOR_ID / SANDBOX_API_KEY.
 const CONNECTOR_ID = Number(process.env.COMPARE_CONNECTOR_ID || 628)
+const connectorIdFor = (suffix: 'B' | 'C' | 'D') =>
+  Number(process.env[`COMPARE_CONNECTOR_ID_${suffix}`]) || CONNECTOR_ID
+const apiKeyFor = (suffix: 'C' | 'D') => process.env[`SANDBOX_API_KEY_${suffix}`] || process.env.SANDBOX_API_KEY
+const CONNECTOR_ID_B = connectorIdFor('B')
+const CONNECTOR_ID_C = connectorIdFor('C')
+const CONNECTOR_ID_D = connectorIdFor('D')
+
+// Lane B rides the Sandcastle API as its own org (SANDBOX_API_KEY_B), so it needs a
+// dedicated manager — the app-wide singleton authenticates as SANDBOX_API_KEY.
+export const compareSandboxManager = new SandcastleManager('SANDBOX_API_KEY_B')
 // Ana auto-persists charts as TextQL dashboards; for the demo we want the chart
 // returned inline without cluttering the org with dashboards.
 const NO_DASHBOARD_NOTE =
@@ -56,7 +68,7 @@ CRITICAL: each run_python call runs in a FRESH process — variables, imports, a
 const CONNECTOR_NOTE = `
 
 DATA ACCESS — use the prebuilt governed connector (don't write raw connection code):
-Use the query_connector tool to load data from TextQL connector_id ${CONNECTOR_ID} (US Real Estate Cybersyn) straight into a pandas DataFrame. It runs Snowflake SQL against US_REAL_ESTATE.CYBERSYN. run_python keeps state across calls, so loaded DataFrames persist; pass a "query" (raw SQL) to query_connector, then analyze + plot with run_python.
+Use the query_connector tool to load data from TextQL connector_id ${CONNECTOR_ID_B} (US Real Estate Cybersyn) straight into a pandas DataFrame. It runs Snowflake SQL against US_REAL_ESTATE.CYBERSYN. run_python keeps state across calls, so loaded DataFrames persist; pass a "query" (raw SQL) to query_connector, then analyze + plot with run_python.
 
 ONTOLOGY FLYWHEEL — this is the most important part of your workflow:
 STEP 1 (ALWAYS FIRST): before doing anything else, inspect the mounted Context Library with run_python — walk ./library and read any .tql / .md files (e.g. \`import os; [print(p) for r,_,fs in os.walk('library') for p in [os.path.join(r,f) for f in fs]]\` then print the contents). If a saved query or schema note already answers this question, REUSE it directly (run the saved .tql via query_connector with tql_path, or copy its SQL) and skip schema exploration entirely. A warm library should let you finish in 1–2 tool calls.
@@ -116,7 +128,7 @@ export async function runSandboxLane(opts: {
   sess: LaneSession
 }): Promise<void> {
   const { backend, question, emit, sess } = opts
-  const mgr: SandboxBackend = backend === 'modal' ? modalManager : sandboxManager
+  const mgr: SandboxBackend = backend === 'modal' ? modalManager : compareSandboxManager
   const start = Date.now()
   let toolCalls = 0
   let inputTokens = 0
@@ -169,10 +181,10 @@ export async function runSandboxLane(opts: {
                 },
                 async ({ connector_id, query: q, tql_path, dataframe_name }) => {
                   toolCalls++
-                  emit({ type: 'tool', name: 'query_connector', code: q || tql_path || `connector ${connector_id ?? CONNECTOR_ID}` })
+                  emit({ type: 'tool', name: 'query_connector', code: q || tql_path || `connector ${connector_id ?? CONNECTOR_ID_B}` })
                   try {
-                    const r = await sandboxManager.queryConnector(sandboxId, {
-                      connectorId: connector_id ?? CONNECTOR_ID,
+                    const r = await compareSandboxManager.queryConnector(sandboxId, {
+                      connectorId: connector_id ?? CONNECTOR_ID_B,
                       query: q,
                       tqlPath: tql_path,
                       dataframeName: dataframe_name,
@@ -187,7 +199,7 @@ export async function runSandboxLane(opts: {
                 }
               ),
               tool('list_connectors', 'List available TextQL connectors (id, name, type).', {}, async () => {
-                const cs = await sandboxManager.listConnectors()
+                const cs = await compareSandboxManager.listConnectors()
                 return { content: [{ type: 'text', text: cs.map((c) => `${c.id}\t${c.name}\t${c.type}`).join('\n') || '(none)' }] }
               }),
               tool(
@@ -201,7 +213,7 @@ export async function runSandboxLane(opts: {
                   toolCalls++
                   emit({ type: 'tool', name: 'save_to_ontology', code: title })
                   try {
-                    const p = await sandboxManager.createLibraryPatch(sandboxId, { title, description })
+                    const p = await compareSandboxManager.createLibraryPatch(sandboxId, { title, description })
                     const summary = `patch ${p.patchId} (#${p.patchNumber}) · status=${p.status}${p.autoApproved ? ' · auto-approved' : ''}${p.hasConflicts ? ' · CONFLICTS' : ''}`
                     emit({ type: 'tool_result', ok: !p.hasConflicts, output: summary })
                     return { content: [{ type: 'text', text: summary }], isError: p.hasConflicts }
@@ -272,7 +284,7 @@ export async function runSandboxLane(opts: {
 
 // Lane C system prompt: Claude has no DB access; it delegates to Ana via MCP.
 const MCP_SYSTEM_PROMPT = `You are a data analyst with NO direct database or sandbox access. Delegate to Ana — TextQL's data agent — over MCP, using its ASYNC tools (the synchronous "ana" tool times out on real analyses):
-1) Call ana_ask EXACTLY ONCE with: question (restate the full request, and explicitly tell Ana to return the chart inline but NOT create or save a TextQL dashboard) and tools: { connector_ids: [${CONNECTOR_ID}], python_enabled: true, sql_enabled: true, ontology_enabled: true } — everything MUST be nested inside the "tools" object. connector_ids attaches the US Real Estate Cybersyn connector (without it Ana reports the connector is not attached), and python/sql/ontology must be enabled or Ana can't actually run the analysis. It returns a chat_id and a cursor.
+1) Call ana_ask EXACTLY ONCE with: question (restate the full request, and explicitly tell Ana to return the chart inline but NOT create or save a TextQL dashboard) and tools: { connector_ids: [${CONNECTOR_ID_C}], python_enabled: true, sql_enabled: true, ontology_enabled: true } — everything MUST be nested inside the "tools" object. connector_ids attaches the US Real Estate Cybersyn connector (without it Ana reports the connector is not attached), and python/sql/ontology must be enabled or Ana can't actually run the analysis. It returns a chat_id and a cursor.
 2) Then call ana_poll with that chat_id and the latest cursor REPEATEDLY until the response status is "complete" (or "error"). Ana can take a minute or more — keep polling patiently while status is "running"; pass the newest cursor each time. Do NOT call ana_ask again.
 3) When complete, relay Ana's actual findings plus the chat link where the chart can be viewed.
 BE HONEST: Ana queries the data and builds the chart inside its OWN thread (reachable only via the link). You did NOT render a chart inline, and it is NOT necessarily matplotlib — do not claim you produced an inline or matplotlib chart. Just summarize what Ana found and give the link, e.g. "Ana queried the data and built a chart — view it here: <link>".`
@@ -288,9 +300,9 @@ export async function runMcpLane(opts: { question: string; emit: Emit; sess: Lan
   let inputTokens = 0
   let outputTokens = 0
   const base = (process.env.SANDBOX_BASE_URL || 'https://app.textql.com').replace(/\/+$/, '')
-  const key = process.env.SANDBOX_API_KEY
+  const key = apiKeyFor('C')
   if (!key) {
-    emit({ type: 'error', message: 'SANDBOX_API_KEY not set' })
+    emit({ type: 'error', message: 'SANDBOX_API_KEY_C (or SANDBOX_API_KEY) not set' })
     return
   }
 
@@ -359,9 +371,9 @@ export async function runAnaLane(opts: {
   const { question, emit, sess } = opts
   const start = Date.now()
   const base = (process.env.SANDBOX_BASE_URL || 'https://app.textql.com').replace(/\/+$/, '')
-  const key = process.env.SANDBOX_API_KEY
+  const key = apiKeyFor('D')
   if (!key) {
-    emit({ type: 'error', message: 'SANDBOX_API_KEY not set' })
+    emit({ type: 'error', message: 'SANDBOX_API_KEY_D (or SANDBOX_API_KEY) not set' })
     return
   }
 
@@ -376,7 +388,7 @@ export async function runAnaLane(opts: {
             python_enabled: true,
             sql_enabled: true,
             ontology_enabled: true,
-            connector_ids: opts.connectorIds?.length ? opts.connectorIds : [CONNECTOR_ID],
+            connector_ids: opts.connectorIds?.length ? opts.connectorIds : [CONNECTOR_ID_D],
           },
         }
 
