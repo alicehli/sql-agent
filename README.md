@@ -9,6 +9,7 @@ A conversational AI assistant for data analysis with SQL queries and Python exec
 - **Visualizations** - Generate charts with matplotlib, saved to sandbox
 - **Session Branching** - Steins;Gate style worldlines - branch conversations and sandbox state
 - **Persistent Sessions** - Resume conversations with full context
+- **Versus Comparison** - Side-by-side demo running the same question across four agent setups (see [Routes](#routes))
 
 ## Quick Start
 
@@ -25,6 +26,28 @@ pnpm dev
 
 # Open http://localhost:5173
 ```
+
+## Routes
+
+The app serves two distinct UIs from the same server. Both require signing in (Clerk) — until you do, every path shows the sign-in screen.
+
+| Path | UI | Description |
+|------|----|-------------|
+| `/` | **Sidekick** (default) | The main chat agent: ask a question, Claude runs SQL/Python in the sandbox, with a data connectors panel. |
+| `/compare` or `/versus` | **Versus** | Four side-by-side lanes answering the same question, to compare agent approaches. |
+
+> **Note:** There is no in-app link to the Versus view — navigate to `http://localhost:5173/compare` (or `/versus`) directly. The path match is exact, so omit any trailing slash (`/compare`, not `/compare/`).
+
+The four Versus lanes are:
+
+| Lane | Setup |
+|------|-------|
+| A · Generic sandbox | Claude Agent SDK harness + Modal (DIY connector) |
+| B · TextQL Sandcastle | Claude Agent SDK harness + Sandcastle (prebuilt connector) |
+| C · Ana via MCP | Claude Agent SDK harness + TextQL MCP → Ana |
+| D · Ana API | Direct `/v2/chats` call to Ana |
+
+The view renders without extra setup, but lanes only produce output when their backends are reachable: `SANDBOX_*` for lanes B/C, Modal (`scripts/modal_op.py`) for lane A, and Ana API access for lanes C/D.
 
 ## Environment Variables
 
