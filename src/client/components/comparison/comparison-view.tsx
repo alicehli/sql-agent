@@ -153,6 +153,8 @@ export function ComparisonView() {
   const [rejected, setRejected] = useState<Set<string>>(new Set())
   const [autoApprove, setAutoApprove] = useState(false)
   const [autoAccepted, setAutoAccepted] = useState<{ count: number } | null>(null)
+  const [ontoResetStatus, setOntoResetStatus] = useState<string | null>(null)
+  const [ontoResetting, setOntoResetting] = useState(false)
   const reviewedRef = useRef<Set<string>>(new Set())
   const sessionId = useRef<string>('')
   const abortRef = useRef<AbortController | null>(null)
@@ -490,6 +492,28 @@ export function ComparisonView() {
     }
   }
 
+  // Deletes the org-committed Context Library (via an all-deletions writeback
+  // patch); works whether or not a Versus session is currently running.
+  async function resetOntology() {
+    if (!window.confirm('Reset the ontology? This deletes the org Context Library.')) return
+    setOntoResetting(true)
+    try {
+      const resp = await fetch('/api/compare/ontology/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId.current }),
+      })
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      const data = await resp.json()
+      setOntoResetStatus(data.committed ? 'ontology reset ✓' : 'ontology reset — patch pending review')
+    } catch {
+      setOntoResetStatus('reset failed')
+    } finally {
+      setOntoResetting(false)
+      setTimeout(() => setOntoResetStatus(null), 4000)
+    }
+  }
+
   return (
     <div className="flex h-full w-full flex-col bg-white" style={FONT}>
       <div className="flex items-center justify-between border-b px-6 py-3">
@@ -534,6 +558,14 @@ export function ComparisonView() {
               Insights
             </button>
           )}
+          {ontoResetStatus && <span className="text-xs text-slate-500">{ontoResetStatus}</span>}
+          <button
+            onClick={resetOntology}
+            disabled={ontoResetting}
+            className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+          >
+            Reset Ontology
+          </button>
           <button
             onClick={reset}
             className="rounded border border-slate-300 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50"

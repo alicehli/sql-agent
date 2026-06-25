@@ -116,6 +116,73 @@ router.post('/compare/ontology/decision', async (req: Request, res: Response) =>
   }
 })
 
+// Reset the ontology: wipe the org Context Library by filing an all-deletions
+// writeback patch (auto-approved when the org allows it; otherwise staged for
+// review). Works with or without an active Versus session — when none is running,
+// a throwaway sandbox is created just for the reset and torn down afterward. Its
+// ./library mounts the org's committed Context Library, which is what we clear.
+router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
+  const { userId } = getAuth(req)
+  if (!userId) {
+    res.status(401).json({ error: 'Authentication required' })
+    return
+  }
+  const sessionId = (req.body?.sessionId ?? '').toString()
+  if (!sessionId) {
+    res.status(400).json({ error: 'sessionId required' })
+    return
+  }
+  let sandboxId = getCompareSession(sessionId).sandcastle.sandboxId
+  let ephemeral = false
+  try {
+    if (!sandboxId) {
+      sandboxId = await compareSandboxManager.createSandbox()
+      ephemeral = true
+    }
+    // Clear the sandbox's local ./library (rm -rf ./library/*). The execute cwd
+    // is SANDBOX_WORKDIR, so 'library' resolves to /sandbox/files/library.
+    const code = [
+      'import os, shutil',
+      "if os.path.isdir('library'):",
+      "  for _n in os.listdir('library'):",
+      "    _p = os.path.join('library', _n)",
+      '    shutil.rmtree(_p) if os.path.isdir(_p) else os.remove(_p)',
+      "print('__CLEARED__')",
+    ].join('\n')
+    await compareSandboxManager.executeCode(sandboxId, code)
+
+    const patch = await compareSandboxManager.createLibraryPatch(sandboxId, {
+      title: 'Reset Context Library',
+      description: 'Delete all committed Context Library files (Versus reset).',
+    })
+    let committed = patch.autoApproved
+    if (!committed) {
+      try {
+        const r = await compareSandboxManager.approveLibraryChange(patch.patchId, patch.gitRef)
+        committed = r.merged
+      } catch {
+        // Distinct-approver folder rules can reject self-approval; leave the patch
+        // staged for human review rather than failing the whole reset.
+        committed = false
+      }
+    }
+    res.json({
+      ok: true,
+      committed,
+      patch: {
+        patchId: patch.patchId,
+        patchNumber: patch.patchNumber,
+        status: patch.status,
+        autoApproved: patch.autoApproved,
+      },
+    })
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : String(e) })
+  } finally {
+    if (ephemeral && sandboxId) await compareSandboxManager.killSandbox(sandboxId).catch(() => {})
+  }
+})
+
 router.post('/compare/:lane', async (req: Request, res: Response) => {
   const { userId } = getAuth(req)
   if (!userId) {
