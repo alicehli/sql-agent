@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   getAuth: vi.fn(),
   getCompareSession: vi.fn(),
+  createSandbox: vi.fn(),
+  killSandbox: vi.fn(),
   executeCode: vi.fn(),
   createLibraryPatch: vi.fn(),
   approveLibraryChange: vi.fn(),
@@ -18,10 +20,11 @@ vi.mock('../../comparison/lane-runner', () => ({
   runMcpLane: vi.fn(),
   runAnaLane: vi.fn(),
   compareSandboxManager: {
+    createSandbox: h.createSandbox,
+    killSandbox: h.killSandbox,
     executeCode: h.executeCode,
     createLibraryPatch: h.createLibraryPatch,
     approveLibraryChange: h.approveLibraryChange,
-    killSandbox: vi.fn(),
     diffLibrary: vi.fn(),
   },
 }))
@@ -88,6 +91,8 @@ describe('POST /compare/ontology/reset', () => {
     vi.clearAllMocks()
     h.getAuth.mockReturnValue({ userId: 'user-1' })
     h.getCompareSession.mockReturnValue({ sandcastle: { sandboxId: 'sb-1' } })
+    h.createSandbox.mockResolvedValue('sb-ephemeral')
+    h.killSandbox.mockResolvedValue(undefined)
     h.executeCode.mockResolvedValue({ stdout: '__CLEARED__', stderr: '', exitCode: 0 })
     h.createLibraryPatch.mockResolvedValue({ ...PATCH })
     h.approveLibraryChange.mockResolvedValue({ merged: true, approvalCount: 1, requiredApprovals: 1 })
@@ -101,19 +106,18 @@ describe('POST /compare/ontology/reset', () => {
     expect(h.executeCode).not.toHaveBeenCalled()
   })
 
-  it('no active sandbox -> ok with nothing cleared/committed, no sandbox calls', async () => {
-    h.getCompareSession.mockReturnValue({ sandcastle: {} })
+  it('returns 400 when sessionId is missing', async () => {
     const res = mockRes()
-    await handler({ body: { sessionId: 's' } }, res)
-    expect(res.body).toMatchObject({ ok: true, sandboxCleared: false, committed: false })
-    expect(h.executeCode).not.toHaveBeenCalled()
-    expect(h.createLibraryPatch).not.toHaveBeenCalled()
+    await handler({ body: {} }, res)
+    expect(res.status).toHaveBeenCalledWith(400)
+    expect(h.createSandbox).not.toHaveBeenCalled()
   })
 
-  it('clears ./library and files a deletion patch when a sandbox exists', async () => {
+  it('reuses the live session sandbox and does not tear it down', async () => {
     const res = mockRes()
     await handler({ body: { sessionId: 's' } }, res)
-    expect(h.executeCode).toHaveBeenCalledTimes(1)
+    expect(h.createSandbox).not.toHaveBeenCalled()
+    expect(h.killSandbox).not.toHaveBeenCalled()
     const [sandboxId, code] = h.executeCode.mock.calls[0]
     expect(sandboxId).toBe('sb-1')
     expect(code).toContain("os.listdir('library')")
@@ -121,7 +125,27 @@ describe('POST /compare/ontology/reset', () => {
       'sb-1',
       expect.objectContaining({ title: 'Reset Context Library' })
     )
-    expect(res.body).toMatchObject({ ok: true, sandboxCleared: true })
+    expect(res.body).toMatchObject({ ok: true })
+  })
+
+  it('cold reset (no session sandbox): creates an ephemeral sandbox and tears it down', async () => {
+    h.getCompareSession.mockReturnValue({ sandcastle: {} })
+    const res = mockRes()
+    await handler({ body: { sessionId: 's' } }, res)
+    expect(h.createSandbox).toHaveBeenCalledTimes(1)
+    expect(h.executeCode).toHaveBeenCalledWith('sb-ephemeral', expect.stringContaining("os.listdir('library')"))
+    expect(h.createLibraryPatch).toHaveBeenCalledWith('sb-ephemeral', expect.any(Object))
+    expect(h.killSandbox).toHaveBeenCalledWith('sb-ephemeral')
+    expect(res.body).toMatchObject({ ok: true })
+  })
+
+  it('tears down the ephemeral sandbox even when the reset fails', async () => {
+    h.getCompareSession.mockReturnValue({ sandcastle: {} })
+    h.executeCode.mockRejectedValue(new Error('boom'))
+    const res = mockRes()
+    await handler({ body: { sessionId: 's' } }, res)
+    expect(res.status).toHaveBeenCalledWith(502)
+    expect(h.killSandbox).toHaveBeenCalledWith('sb-ephemeral')
   })
 
   it('auto-approved patch -> committed true, no approve call', async () => {

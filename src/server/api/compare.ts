@@ -116,9 +116,11 @@ router.post('/compare/ontology/decision', async (req: Request, res: Response) =>
   }
 })
 
-// Reset the ontology: wipe the sandbox lane's local ./library AND reset the org
-// Context Library by filing an all-deletions writeback patch (auto-approved when
-// the org allows it; otherwise the patch is staged for review).
+// Reset the ontology: wipe the org Context Library by filing an all-deletions
+// writeback patch (auto-approved when the org allows it; otherwise staged for
+// review). Works with or without an active Versus session — when none is running,
+// a throwaway sandbox is created just for the reset and torn down afterward. Its
+// ./library mounts the org's committed Context Library, which is what we clear.
 router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
   const { userId } = getAuth(req)
   if (!userId) {
@@ -130,12 +132,13 @@ router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'sessionId required' })
     return
   }
-  const sandboxId = getCompareSession(sessionId).sandcastle.sandboxId
-  if (!sandboxId) {
-    res.json({ ok: true, sandboxCleared: false, committed: false, message: 'no active sandbox' })
-    return
-  }
+  let sandboxId = getCompareSession(sessionId).sandcastle.sandboxId
+  let ephemeral = false
   try {
+    if (!sandboxId) {
+      sandboxId = await compareSandboxManager.createSandbox()
+      ephemeral = true
+    }
     // Clear the sandbox's local ./library (rm -rf ./library/*). The execute cwd
     // is SANDBOX_WORKDIR, so 'library' resolves to /sandbox/files/library.
     const code = [
@@ -165,7 +168,6 @@ router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
     }
     res.json({
       ok: true,
-      sandboxCleared: true,
       committed,
       patch: {
         patchId: patch.patchId,
@@ -176,6 +178,8 @@ router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
     })
   } catch (e) {
     res.status(502).json({ error: e instanceof Error ? e.message : String(e) })
+  } finally {
+    if (ephemeral && sandboxId) await compareSandboxManager.killSandbox(sandboxId).catch(() => {})
   }
 })
 

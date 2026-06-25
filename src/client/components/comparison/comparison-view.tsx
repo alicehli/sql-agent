@@ -492,9 +492,10 @@ export function ComparisonView() {
     }
   }
 
-  // Wipes both the sandbox-local ./library and the org-committed Context Library.
+  // Deletes the org-committed Context Library (via an all-deletions writeback
+  // patch); works whether or not a Versus session is currently running.
   async function resetOntology() {
-    if (!window.confirm('Reset the ontology? This clears the sandbox library and the org Context Library.')) return
+    if (!window.confirm('Reset the ontology? This deletes the org Context Library.')) return
     setOntoResetting(true)
     try {
       const resp = await fetch('/api/compare/ontology/reset', {
@@ -504,8 +505,7 @@ export function ComparisonView() {
       })
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const data = await resp.json()
-      if (!data.sandboxCleared) setOntoResetStatus('no active session')
-      else setOntoResetStatus(data.committed ? 'ontology reset ✓' : 'ontology reset — patch pending review')
+      setOntoResetStatus(data.committed ? 'ontology reset ✓' : 'ontology reset — patch pending review')
     } catch {
       setOntoResetStatus('reset failed')
     } finally {
