@@ -334,6 +334,30 @@ export class SandcastleManager {
   }
 
   /**
+   * Approve a Context Library change so it merges to the org library. The change
+   * merges only once required approvals are met; until then `merged` is false
+   * (with the running approvalCount / requiredApprovals). A stale gitRef 409s and
+   * self-approval can be rejected by distinct-approver folder rules — callers
+   * should treat a throw / merged:false as "staged, not committed".
+   * POST /v2/changes/:id/approve
+   */
+  async approveLibraryChange(
+    changeId: string,
+    expectedGitRef: string
+  ): Promise<{ merged: boolean; approvalCount: number; requiredApprovals: number }> {
+    const r = await this.request<{
+      merged: boolean
+      approval_count: number
+      required_approvals: number
+    }>('POST', `/v2/changes/${changeId}/approve`, { expected_git_ref: expectedGitRef })
+    return {
+      merged: !!r.merged,
+      approvalCount: r.approval_count ?? 0,
+      requiredApprovals: r.required_approvals ?? 0,
+    }
+  }
+
+  /**
    * Run Python in the sandcastle. Returns the raw API response.
    * `print()` output is captured as an array of strings; errors null the output.
    */

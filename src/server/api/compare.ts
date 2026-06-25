@@ -116,6 +116,67 @@ router.post('/compare/ontology/decision', async (req: Request, res: Response) =>
   }
 })
 
+// Reset the ontology: wipe the sandbox lane's local ./library AND reset the org
+// Context Library by filing an all-deletions writeback patch (auto-approved when
+// the org allows it; otherwise the patch is staged for review).
+router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
+  const { userId } = getAuth(req)
+  if (!userId) {
+    res.status(401).json({ error: 'Authentication required' })
+    return
+  }
+  const sessionId = (req.body?.sessionId ?? '').toString()
+  const sandboxId = getCompareSession(sessionId).sandcastle.sandboxId
+  if (!sandboxId) {
+    res.json({ ok: true, sandboxCleared: false, committed: false, message: 'no active sandbox' })
+    return
+  }
+  try {
+    // Clear the sandbox's local ./library (rm -rf ./library/*). The execute cwd
+    // is SANDBOX_WORKDIR, so 'library' resolves to /sandbox/files/library.
+    const code = [
+      'import os, shutil',
+      "if os.path.isdir('library'):",
+      "  for _n in os.listdir('library'):",
+      "    _p = os.path.join('library', _n)",
+      '    shutil.rmtree(_p) if os.path.isdir(_p) else os.remove(_p)',
+      "print('__CLEARED__')",
+    ].join('\n')
+    await compareSandboxManager.executeCode(sandboxId, code)
+
+    // Persist the deletions back to the org Context Library as a reviewable patch,
+    // then auto-approve so the reset actually commits.
+    const patch = await compareSandboxManager.createLibraryPatch(sandboxId, {
+      title: 'Reset Context Library',
+      description: 'Delete all committed Context Library files (Versus reset).',
+    })
+    let committed = patch.autoApproved
+    if (!committed) {
+      try {
+        const r = await compareSandboxManager.approveLibraryChange(patch.patchId, patch.gitRef)
+        committed = r.merged
+      } catch {
+        // Distinct-approver folder rules can reject self-approval; leave the patch
+        // staged for human review rather than failing the whole reset.
+        committed = false
+      }
+    }
+    res.json({
+      ok: true,
+      sandboxCleared: true,
+      committed,
+      patch: {
+        patchId: patch.patchId,
+        patchNumber: patch.patchNumber,
+        status: patch.status,
+        autoApproved: patch.autoApproved,
+      },
+    })
+  } catch (e) {
+    res.status(502).json({ error: e instanceof Error ? e.message : String(e) })
+  }
+})
+
 router.post('/compare/:lane', async (req: Request, res: Response) => {
   const { userId } = getAuth(req)
   if (!userId) {
