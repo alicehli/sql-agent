@@ -492,8 +492,7 @@ export function ComparisonView() {
     }
   }
 
-  // Separate from reset(): wipe the accumulated ontology — the sandbox lane's
-  // local ./library AND the org-level committed Context Library — in one call.
+  // Wipes both the sandbox-local ./library and the org-committed Context Library.
   async function resetOntology() {
     if (!window.confirm('Reset the ontology? This clears the sandbox library and the org Context Library.')) return
     setOntoResetting(true)
@@ -505,7 +504,8 @@ export function ComparisonView() {
       })
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const data = await resp.json()
-      setOntoResetStatus(data.committed ? 'ontology reset ✓' : 'ontology reset — patch pending review')
+      if (!data.sandboxCleared) setOntoResetStatus('no active session')
+      else setOntoResetStatus(data.committed ? 'ontology reset ✓' : 'ontology reset — patch pending review')
     } catch {
       setOntoResetStatus('reset failed')
     } finally {

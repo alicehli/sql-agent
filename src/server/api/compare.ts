@@ -126,6 +126,10 @@ router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
     return
   }
   const sessionId = (req.body?.sessionId ?? '').toString()
+  if (!sessionId) {
+    res.status(400).json({ error: 'sessionId required' })
+    return
+  }
   const sandboxId = getCompareSession(sessionId).sandcastle.sandboxId
   if (!sandboxId) {
     res.json({ ok: true, sandboxCleared: false, committed: false, message: 'no active sandbox' })
@@ -144,8 +148,6 @@ router.post('/compare/ontology/reset', async (req: Request, res: Response) => {
     ].join('\n')
     await compareSandboxManager.executeCode(sandboxId, code)
 
-    // Persist the deletions back to the org Context Library as a reviewable patch,
-    // then auto-approve so the reset actually commits.
     const patch = await compareSandboxManager.createLibraryPatch(sandboxId, {
       title: 'Reset Context Library',
       description: 'Delete all committed Context Library files (Versus reset).',
